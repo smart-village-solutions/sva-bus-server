@@ -1,0 +1,15 @@
+# Dependencies / outputs
+node_modules/
+dist/
+coverage/
+openspec/
+
+# Generated / vendor-like content in this repo (not maintained in this project)
+.agents/
+.opencode/
+
+# Repo tooling prompts (often managed externally)
+.github/prompts/
+
+# Lockfiles
+package-lock.json
