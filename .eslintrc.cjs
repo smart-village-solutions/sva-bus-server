@@ -6,7 +6,7 @@ module.exports = {
     tsconfigRootDir: __dirname,
     sourceType: 'module',
   },
-  plugins: ['@typescript-eslint', 'prettier'],
+  plugins: ['@typescript-eslint', 'prettier', 'simple-import-sort'],
   extends: [
     'eslint:recommended',
     'plugin:@typescript-eslint/recommended',
@@ -17,4 +17,8 @@ module.exports = {
     es2022: true,
   },
   ignorePatterns: ['dist', 'node_modules'],
+  rules: {
+    'simple-import-sort/imports': 'error',
+    'simple-import-sort/exports': 'error',
+  },
 };

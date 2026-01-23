@@ -6,10 +6,12 @@ Provide a stable backend API proxy for a mobile app, enabling controlled access 
 
 ## Tech Stack
 
-- Node.js 24.13.0 (latest stable LTS)
+- Node.js 22.x LTS (22.12.0 recommended)
 - TypeScript
 - NestJS with Fastify adapter
-- Redis (planned, for caching)
+- undici for upstream HTTP access
+- cache-manager with Redis backing store
+- Redis (required for shared caching)
 
 ## Project Conventions
 
@@ -31,6 +33,15 @@ Provide a stable backend API proxy for a mobile app, enabling controlled access 
 - Structured HTTP request logging (level controlled via environment)
 - Correlation IDs for request tracing (planned)
 - Metrics/tracing via OpenTelemetry (planned)
+
+### Runtime Configuration
+
+- `HTTP_CLIENT_BASE_URL` controls the upstream base URL
+- `HTTP_CLIENT_TIMEOUT` sets request timeout in milliseconds
+- `HTTP_CLIENT_RETRIES` sets retry attempts for upstream calls
+- `CACHE_REDIS_URL` sets Redis connection string
+- `CACHE_TTL_DEFAULT` sets default cache TTL in seconds
+- `CACHE_STALE_TTL` sets stale-while-revalidate window in seconds
 
 ### Security (Initial)
 
