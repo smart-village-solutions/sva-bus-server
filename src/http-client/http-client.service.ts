@@ -11,6 +11,11 @@ export interface HttpRequestOptions {
   signal?: AbortSignal;
 }
 
+export interface HttpClientRawResponse<T> {
+  status: number;
+  body: T | null;
+}
+
 @Injectable()
 export class HttpClientService {
   private readonly logger = new Logger(HttpClientService.name);
@@ -32,6 +37,35 @@ export class HttpClientService {
     return this.request<T>('POST', path, body, options);
   }
 
+  async requestRaw<T>(
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+    options?: HttpRequestOptions,
+  ): Promise<HttpClientRawResponse<T>> {
+    const url = this.buildUrl(path, options?.query);
+    const timeoutMs = options?.timeoutMs ?? this.defaultTimeoutMs;
+    const retries = options?.retries ?? this.defaultRetries;
+    let lastError: unknown;
+
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      try {
+        const response = await this.executeRequest<T>(method, url, body, options, timeoutMs);
+        return { status: response.status, body: response.body };
+      } catch (error) {
+        lastError = error;
+        if (attempt >= retries) {
+          break;
+        }
+        this.logger.warn(
+          `HTTP ${method} ${url} failed (attempt ${attempt + 1}/${retries + 1}). Retrying.`,
+        );
+      }
+    }
+
+    throw lastError;
+  }
+
   private async request<T>(
     method: 'GET' | 'POST',
     path: string,
@@ -45,7 +79,19 @@ export class HttpClientService {
 
     for (let attempt = 0; attempt <= retries; attempt += 1) {
       try {
-        return await this.executeRequest<T>(method, url, body, options, timeoutMs);
+        const response = await this.executeRequest<T>(method, url, body, options, timeoutMs);
+
+        if (!response.ok) {
+          const errorMessage = `Upstream request failed with status ${response.status}`;
+          const error = new Error(errorMessage);
+          this.logger.error(
+            errorMessage,
+            JSON.stringify({ url, method, responseBody: response.body }),
+          );
+          throw error;
+        }
+
+        return response.body as T;
       } catch (error) {
         lastError = error;
         if (attempt >= retries) {
@@ -66,7 +112,7 @@ export class HttpClientService {
     body: unknown,
     options: HttpRequestOptions | undefined,
     timeoutMs: number,
-  ): Promise<T> {
+  ): Promise<{ status: number; ok: boolean; body: T | null }> {
     const controller = new AbortController();
     const signal = this.attachAbortSignal(controller, options?.signal);
 
@@ -85,14 +131,7 @@ export class HttpClientService {
 
       const responseBody = await this.parseResponseBody(response);
 
-      if (!response.ok) {
-        const errorMessage = `Upstream request failed with status ${response.status}`;
-        const error = new Error(errorMessage);
-        this.logger.error(errorMessage, JSON.stringify({ url, method, responseBody }));
-        throw error;
-      }
-
-      return responseBody as T;
+      return { status: response.status, ok: response.ok, body: responseBody as T | null };
     } catch (error) {
       this.logger.error('Upstream request failed', JSON.stringify({ url, method }));
       throw error;

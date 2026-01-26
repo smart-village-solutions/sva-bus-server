@@ -27,6 +27,7 @@ cp .env.example .env
 ### Required settings
 
 - `HTTP_CLIENT_BASE_URL`: Base URL for upstream API calls
+- `HTTP_CLIENT_API_KEY`: API key sent as `api_key` header to the upstream API
 - `HTTP_CLIENT_TIMEOUT`: Request timeout in milliseconds
 - `HTTP_CLIENT_RETRIES`: Retry attempts for upstream calls
 - `CACHE_REDIS_URL`: Redis connection string
@@ -44,6 +45,24 @@ Cache connectivity check:
 ```bash
 curl http://localhost:3000/health/cache
 ```
+
+## Proxy Endpoints
+
+Proxy requests to the upstream API via `/api/v1` (forwards headers and automatically adds `api_key` header if configured):
+
+```bash
+curl "http://localhost:3000/api/v1/test?foo=bar"
+```
+
+POST requests forward JSON bodies:
+
+```bash
+curl -X POST "http://localhost:3000/api/v1/example" -H "content-type: application/json" -d '{"key":"value"}'
+```
+
+Notes:
+
+- The proxy currently has no authentication or rate limiting. Add those before exposing it publicly.
 
 ## Cache Usage Example
 
