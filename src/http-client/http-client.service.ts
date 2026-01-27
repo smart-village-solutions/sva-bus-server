@@ -16,6 +16,11 @@ export interface HttpClientRawResponse<T> {
   body: T | null;
 }
 
+interface HttpError extends Error {
+  status?: number;
+  responseBody?: unknown;
+}
+
 @Injectable()
 export class HttpClientService implements OnModuleDestroy {
   private readonly logger = new Logger(HttpClientService.name);
@@ -66,7 +71,9 @@ export class HttpClientService implements OnModuleDestroy {
         return { status: response.status, body: response.body };
       } catch (error) {
         lastError = error;
-        if (attempt >= effectiveRetries) {
+        const shouldRetry = this.isRetryableError(error);
+
+        if (attempt >= effectiveRetries || !shouldRetry) {
           break;
         }
         this.logger.warn(
@@ -95,25 +102,45 @@ export class HttpClientService implements OnModuleDestroy {
         const response = await this.executeRequest<T>(method, url, body, options, timeoutMs);
 
         if (!response.ok) {
-          const errorMessage = `Upstream request failed with status ${response.status}`;
-          const error = new Error(errorMessage);
-          this.logger.error(
-            errorMessage,
-            JSON.stringify({ url, method, responseBody: response.body }),
-          );
+          const error = new Error(
+            `Upstream request failed with status ${response.status}`,
+          ) as HttpError;
+          error.status = response.status;
+          error.responseBody = response.body;
           throw error;
         }
 
         return response.body as T;
       } catch (error) {
         lastError = error;
-        if (attempt >= effectiveRetries) {
+        const shouldRetry = this.isRetryableError(error);
+
+        if (attempt >= effectiveRetries || !shouldRetry) {
           break;
         }
         this.logger.warn(
           `HTTP ${method} ${url} failed (attempt ${attempt + 1}/${effectiveRetries + 1}). Retrying.`,
         );
       }
+    }
+
+    // Log error once at the end
+    const httpError = lastError as HttpError;
+    if (httpError?.status) {
+      this.logger.error(
+        httpError.message,
+        JSON.stringify({
+          url,
+          method,
+          status: httpError.status,
+          responseBody: httpError.responseBody,
+        }),
+      );
+    } else {
+      this.logger.error(
+        httpError?.message ?? 'Upstream request failed',
+        JSON.stringify({ url, method }),
+      );
     }
 
     throw lastError;
@@ -129,27 +156,22 @@ export class HttpClientService implements OnModuleDestroy {
     const controller = new AbortController();
     const signal = this.attachAbortSignal(controller, options?.signal);
 
-    try {
-      const response = await this.fetchWithTimeout(
-        url,
-        {
-          method,
-          headers: this.buildHeaders(options?.headers, body),
-          body: body === undefined ? undefined : JSON.stringify(body),
-          signal,
-          dispatcher: this.dispatcher,
-        },
-        timeoutMs,
-        controller,
-      );
+    const response = await this.fetchWithTimeout(
+      url,
+      {
+        method,
+        headers: this.buildHeaders(options?.headers, body),
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal,
+        dispatcher: this.dispatcher,
+      },
+      timeoutMs,
+      controller,
+    );
 
-      const responseBody = await this.parseResponseBody(response);
+    const responseBody = await this.parseResponseBody(response);
 
-      return { status: response.status, ok: response.ok, body: responseBody as T | null };
-    } catch (error) {
-      this.logger.error('Upstream request failed', JSON.stringify({ url, method }));
-      throw error;
-    }
+    return { status: response.status, ok: response.ok, body: responseBody as T | null };
   }
 
   private async fetchWithTimeout(
@@ -208,6 +230,28 @@ export class HttpClientService implements OnModuleDestroy {
     }
 
     return url.toString();
+  }
+
+  private isRetryableError(error: unknown): boolean {
+    if (!error || typeof error !== 'object') {
+      return false;
+    }
+
+    const httpError = error as HttpError;
+
+    // Don't retry 4xx client errors (400-499)
+    if (httpError.status && httpError.status >= 400 && httpError.status < 500) {
+      return false;
+    }
+
+    // Retry 5xx server errors (500-599)
+    if (httpError.status && httpError.status >= 500 && httpError.status < 600) {
+      return true;
+    }
+
+    // Retry network errors, timeouts, and other transient failures
+    // (these won't have a status property)
+    return !httpError.status;
   }
 
   private buildHeaders(
