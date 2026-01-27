@@ -1,4 +1,4 @@
-import { BadGatewayException, Body, Controller, Get, Post, Query, Req, Res } from '@nestjs/common';
+import { BadGatewayException, Body, Controller, Get, Post, Req, Res } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
@@ -18,37 +18,34 @@ export class ProxyController {
   @Get('*')
   async handleGet(
     @Req() request: FastifyRequest,
-    @Query() query: Record<string, string | string[] | undefined>,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<unknown> {
-    return this.forwardRequest('GET', request, query, undefined, reply);
+    return this.forwardRequest('GET', request, undefined, reply);
   }
 
   @Post('*')
   async handlePost(
     @Req() request: FastifyRequest,
     @Body() body: unknown,
-    @Query() query: Record<string, string | string[] | undefined>,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<unknown> {
-    return this.forwardRequest('POST', request, query, body, reply);
+    return this.forwardRequest('POST', request, body, reply);
   }
 
   private async forwardRequest(
     method: 'GET' | 'POST',
     request: FastifyRequest,
-    query: Record<string, string | string[] | undefined>,
     body: unknown,
     reply: FastifyReply,
   ): Promise<unknown> {
     const path = this.extractPath(request.url ?? '');
-    const normalizedQuery = this.normalizeQuery(query);
+    const rawQuery = this.extractQueryString(request.url ?? '');
+    const pathWithQuery = rawQuery ? `${path}?${rawQuery}` : path;
     const headers = this.buildForwardHeaders(request);
 
     try {
-      const response = await this.proxyService.forward(method, path, body, {
+      const response = await this.proxyService.forward(method, pathWithQuery, body, {
         headers,
-        query: normalizedQuery,
       });
       reply.status(response.status);
       return response.body;
@@ -75,22 +72,12 @@ export class ProxyController {
     return path || '/';
   }
 
-  private normalizeQuery(
-    query: Record<string, string | string[] | undefined>,
-  ): Record<string, string> {
-    return Object.entries(query).reduce<Record<string, string>>((acc, [key, value]) => {
-      if (value === undefined) {
-        return acc;
-      }
-
-      if (Array.isArray(value)) {
-        acc[key] = value[0] ?? '';
-        return acc;
-      }
-
-      acc[key] = value;
-      return acc;
-    }, {});
+  private extractQueryString(url: string): string | null {
+    const queryIndex = url.indexOf('?');
+    if (queryIndex < 0) {
+      return null;
+    }
+    return url.slice(queryIndex + 1) || null;
   }
 
   private buildForwardHeaders(request: FastifyRequest): Record<string, string> | undefined {
@@ -105,6 +92,21 @@ export class ProxyController {
   }
 
   private normalizeHeaders(headers: FastifyRequest['headers']): Record<string, string> {
+    /**
+     * Set of HTTP/1.1 "hop-by-hop" header names (lowercased) that must not be forwarded
+     * by a proxy.
+     *
+     * Hop-by-hop headers are only meaningful for a single transport-level connection
+     * (one hop) between two adjacent parties (client ↔ proxy or proxy ↔ upstream). They
+     * can control connection behavior and message framing (e.g., `connection`,
+     * `keep-alive`, `transfer-encoding`, `upgrade`) and therefore must be stripped when
+     * relaying requests/responses to the next hop to avoid leaking connection-specific
+     * semantics and to prevent protocol/framing issues.
+     *
+     * References:
+     * - RFC 9110 (HTTP Semantics), "Connection" and hop-by-hop header fields
+     * - RFC 9112 (HTTP/1.1), message framing and connection management
+     */
     const hopByHopHeaders = new Set([
       'connection',
       'keep-alive',

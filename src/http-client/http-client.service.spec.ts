@@ -6,6 +6,7 @@ import { HttpClientService } from './http-client.service';
 
 jest.mock('undici', () => ({
   fetch: jest.fn(),
+  Agent: jest.fn().mockImplementation(() => ({})),
 }));
 
 const mockedFetch = fetch as jest.Mock;

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { Response as UndiciResponse } from 'undici';
-import { fetch } from 'undici';
+import type { RequestInit, Response as UndiciResponse } from 'undici';
+import { Agent, fetch } from 'undici';
 
 export interface HttpRequestOptions {
   headers?: Record<string, string>;
@@ -22,11 +22,18 @@ export class HttpClientService {
   private readonly baseUrl: string;
   private readonly defaultTimeoutMs: number;
   private readonly defaultRetries: number;
+  private readonly dispatcher: Agent;
 
   constructor(private readonly configService: ConfigService) {
     this.baseUrl = this.configService.get<string>('HTTP_CLIENT_BASE_URL') ?? '';
     this.defaultTimeoutMs = Number(this.configService.get('HTTP_CLIENT_TIMEOUT') ?? 10000);
     this.defaultRetries = Number(this.configService.get('HTTP_CLIENT_RETRIES') ?? 2);
+    this.dispatcher = new Agent({
+      connections: 50,
+      pipelining: 0,
+      keepAliveTimeout: 10_000,
+      keepAliveMaxTimeout: 60_000,
+    });
   }
 
   async get<T>(path: string, options?: HttpRequestOptions): Promise<T> {
@@ -46,19 +53,20 @@ export class HttpClientService {
     const url = this.buildUrl(path, options?.query);
     const timeoutMs = options?.timeoutMs ?? this.defaultTimeoutMs;
     const retries = options?.retries ?? this.defaultRetries;
+    const effectiveRetries = method === 'GET' ? retries : 0;
     let lastError: unknown;
 
-    for (let attempt = 0; attempt <= retries; attempt += 1) {
+    for (let attempt = 0; attempt <= effectiveRetries; attempt += 1) {
       try {
         const response = await this.executeRequest<T>(method, url, body, options, timeoutMs);
         return { status: response.status, body: response.body };
       } catch (error) {
         lastError = error;
-        if (attempt >= retries) {
+        if (attempt >= effectiveRetries) {
           break;
         }
         this.logger.warn(
-          `HTTP ${method} ${url} failed (attempt ${attempt + 1}/${retries + 1}). Retrying.`,
+          `HTTP ${method} ${url} failed (attempt ${attempt + 1}/${effectiveRetries + 1}). Retrying.`,
         );
       }
     }
@@ -75,9 +83,10 @@ export class HttpClientService {
     const url = this.buildUrl(path, options?.query);
     const timeoutMs = options?.timeoutMs ?? this.defaultTimeoutMs;
     const retries = options?.retries ?? this.defaultRetries;
+    const effectiveRetries = method === 'GET' ? retries : 0;
     let lastError: unknown;
 
-    for (let attempt = 0; attempt <= retries; attempt += 1) {
+    for (let attempt = 0; attempt <= effectiveRetries; attempt += 1) {
       try {
         const response = await this.executeRequest<T>(method, url, body, options, timeoutMs);
 
@@ -94,11 +103,11 @@ export class HttpClientService {
         return response.body as T;
       } catch (error) {
         lastError = error;
-        if (attempt >= retries) {
+        if (attempt >= effectiveRetries) {
           break;
         }
         this.logger.warn(
-          `HTTP ${method} ${url} failed (attempt ${attempt + 1}/${retries + 1}). Retrying.`,
+          `HTTP ${method} ${url} failed (attempt ${attempt + 1}/${effectiveRetries + 1}). Retrying.`,
         );
       }
     }
@@ -124,6 +133,7 @@ export class HttpClientService {
           headers: this.buildHeaders(options?.headers, body),
           body: body ? JSON.stringify(body) : undefined,
           signal,
+          dispatcher: this.dispatcher,
         },
         timeoutMs,
         controller,
@@ -140,7 +150,7 @@ export class HttpClientService {
 
   private async fetchWithTimeout(
     url: string,
-    init: { method: string; headers: Record<string, string>; body?: string; signal: AbortSignal },
+    init: RequestInit & { signal: AbortSignal },
     timeoutMs: number,
     controller: AbortController,
   ) {

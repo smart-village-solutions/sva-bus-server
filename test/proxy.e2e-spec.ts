@@ -47,11 +47,10 @@ describe('Proxy endpoint (e2e)', () => {
     expect(response.json()).toEqual({ ok: true });
     expect(httpClientService.requestRaw).toHaveBeenCalledWith(
       'GET',
-      '/test',
+      '/test?foo=bar',
       undefined,
       expect.objectContaining({
         headers: expect.objectContaining({ api_key: 'test-key', 'x-request-id': 'abc-123' }),
-        query: { foo: 'bar' },
       }),
     );
   });
