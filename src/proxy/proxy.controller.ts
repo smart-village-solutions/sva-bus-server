@@ -157,8 +157,8 @@ export class ProxyController {
         return acc;
       }
 
-      if (Array.isArray(value) && value[0]) {
-        acc[normalizedKey] = value[0];
+      if (Array.isArray(value) && value.length > 0) {
+        acc[normalizedKey] = value.join(', ');
       }
 
       return acc;

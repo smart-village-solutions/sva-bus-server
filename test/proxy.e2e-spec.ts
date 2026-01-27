@@ -1,5 +1,8 @@
+import { ConfigService } from '@nestjs/config';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test, TestingModule } from '@nestjs/testing';
+
+import { AppModule } from '../src/app.module';
 import { HttpClientService } from '../src/http-client/http-client.service';
 
 describe('Proxy endpoint (e2e)', () => {
@@ -11,13 +14,19 @@ describe('Proxy endpoint (e2e)', () => {
       requestRaw: jest.fn(),
     };
 
-    process.env.HTTP_CLIENT_API_KEY = 'test-key';
-
-    const { AppModule } = await import('../src/app.module');
-
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
+      .overrideProvider(ConfigService)
+      .useValue({
+        get: (key: string) => {
+          if (key === 'HTTP_CLIENT_API_KEY') return 'test-key';
+          if (key === 'HTTP_CLIENT_BASE_URL') return '';
+          if (key === 'HTTP_CLIENT_TIMEOUT') return '10000';
+          if (key === 'HTTP_CLIENT_RETRIES') return '2';
+          return undefined;
+        },
+      })
       .overrideProvider(HttpClientService)
       .useValue(httpClientService)
       .compile();
@@ -33,7 +42,6 @@ describe('Proxy endpoint (e2e)', () => {
 
   afterAll(async () => {
     await app.close();
-    delete process.env.HTTP_CLIENT_API_KEY;
   });
 
   it('forwards GET requests', async () => {

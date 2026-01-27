@@ -49,8 +49,8 @@ export class HttpClientService implements OnModuleDestroy {
     return this.request<T>('POST', path, body, options);
   }
 
-  onModuleDestroy(): void {
-    this.dispatcher.close();
+  async onModuleDestroy(): Promise<void> {
+    await this.dispatcher.close();
   }
 
   async requestRaw<T>(
