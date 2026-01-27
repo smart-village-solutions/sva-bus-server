@@ -7,7 +7,7 @@ The backend currently exposes only health endpoints. Clients need a stable proxy
 ## What Changes
 
 - Add proxy endpoints under a stable base path (e.g., `/api/v1/*`) that forward to the configured upstream API
-- Support GET and POST passthrough with query parameters, headers, and JSON payloads, including a configured `api_key` header
+- Support GET and POST passthrough with query parameters, allowlisted headers, and JSON payloads, including a configured `api_key` header
 - Return upstream responses to clients with consistent error handling for network failures
 - Add tests and documentation for proxy usage and expected behavior
 

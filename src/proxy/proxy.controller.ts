@@ -15,6 +15,14 @@ export class ProxyController {
     this.apiKey = this.configService.get<string>('HTTP_CLIENT_API_KEY') ?? null;
   }
 
+  @Get()
+  async handleRootGet(
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<unknown> {
+    return this.forwardRequest('GET', request, undefined, reply);
+  }
+
   @Get('*')
   async handleGet(
     @Req() request: FastifyRequest,
@@ -48,6 +56,9 @@ export class ProxyController {
         headers,
       });
       reply.status(response.status);
+      if (response.status === 204 || response.body === null) {
+        return undefined;
+      }
       return response.body;
     } catch (error) {
       throw new BadGatewayException({
@@ -120,9 +131,23 @@ export class ProxyController {
       'content-length',
     ]);
 
+    const allowlistedHeaders = new Set([
+      'accept',
+      'accept-encoding',
+      'accept-language',
+      'api_key',
+      'authorization',
+      'content-type',
+      'user-agent',
+    ]);
+
     return Object.entries(headers).reduce<Record<string, string>>((acc, [key, value]) => {
       const normalizedKey = key.toLowerCase();
       if (hopByHopHeaders.has(normalizedKey)) {
+        return acc;
+      }
+
+      if (!this.isAllowedHeader(normalizedKey, allowlistedHeaders)) {
         return acc;
       }
 
@@ -137,6 +162,15 @@ export class ProxyController {
 
       return acc;
     }, {});
+  }
+
+  private isAllowedHeader(header: string, allowlistedHeaders: Set<string>): boolean {
+    // Allow custom app/trace headers (e.g., correlation IDs) without enumerating each one.
+    if (header.startsWith('x-')) {
+      return true;
+    }
+
+    return allowlistedHeaders.has(header);
   }
 
   private resolveApiKey(headers: Record<string, string>): string | null {

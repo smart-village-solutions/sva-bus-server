@@ -48,7 +48,7 @@ curl http://localhost:3000/health/cache
 
 ## Proxy Endpoints
 
-Proxy requests to the upstream API via `/api/v1` (forwards headers and automatically adds `api_key` header if configured):
+Proxy requests to the upstream API via `/api/v1` (forwards allowlisted headers and automatically adds `api_key` header if configured):
 
 ```bash
 curl "http://localhost:3000/api/v1/test?foo=bar"
@@ -63,6 +63,7 @@ curl -X POST "http://localhost:3000/api/v1/example" -H "content-type: applicatio
 Notes:
 
 - The proxy currently has no authentication or rate limiting. Add those before exposing it publicly.
+- The proxy forwards only allowlisted headers (`accept`, `accept-encoding`, `accept-language`, `authorization`, `content-type`, `user-agent`, `api_key`, and `x-*`).
 
 ## Cache Usage Example
 

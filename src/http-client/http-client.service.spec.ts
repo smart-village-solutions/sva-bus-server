@@ -68,4 +68,52 @@ describe('HttpClientService', () => {
     await expectation;
     jest.useRealTimers();
   });
+
+  it('returns text response for non-json content', async () => {
+    mockedFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: {
+        get: () => 'text/plain',
+      },
+      text: async () => 'plain-text',
+    });
+
+    await expect(service.get('/text')).resolves.toEqual('plain-text');
+  });
+
+  it('throws when base URL is missing for relative paths', async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        HttpClientService,
+        {
+          provide: ConfigService,
+          useValue: {
+            get: () => '',
+          },
+        },
+      ],
+    }).compile();
+
+    const localService = module.get<HttpClientService>(HttpClientService);
+
+    await expect(localService.get('/missing')).rejects.toThrow(
+      'HTTP client base URL is not configured',
+    );
+  });
+
+  it('aborts requests when the signal is cancelled', async () => {
+    mockedFetch.mockImplementation((_, init) => {
+      return new Promise((_, reject) => {
+        init.signal.addEventListener('abort', () => reject(new Error('Aborted')));
+      });
+    });
+
+    const controller = new AbortController();
+    const promise = service.get('/abort', { signal: controller.signal, retries: 0 });
+
+    controller.abort();
+
+    await expect(promise).rejects.toThrow('Aborted');
+  });
 });
