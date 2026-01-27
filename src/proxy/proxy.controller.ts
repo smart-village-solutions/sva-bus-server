@@ -104,27 +104,28 @@ export class ProxyController {
 
   private normalizeHeaders(headers: FastifyRequest['headers']): Record<string, string> {
     /**
-     * Set of HTTP/1.1 "hop-by-hop" header names (lowercased) that must not be forwarded
-     * by a proxy.
+     * Headers that must not be forwarded by a proxy.
      *
-     * Hop-by-hop headers are only meaningful for a single transport-level connection
-     * (one hop) between two adjacent parties (client ↔ proxy or proxy ↔ upstream). They
-     * can control connection behavior and message framing (e.g., `connection`,
-     * `keep-alive`, `transfer-encoding`, `upgrade`) and therefore must be stripped when
-     * relaying requests/responses to the next hop to avoid leaking connection-specific
-     * semantics and to prevent protocol/framing issues.
+     * This includes:
+     * 1. Hop-by-hop headers (RFC 9110 Section 7.6.1): Only meaningful for a single
+     *    transport-level connection and must be stripped when relaying to the next hop.
+     *    Examples: connection, keep-alive, transfer-encoding, upgrade, trailer, te.
+     *
+     * 2. Headers overridden by the proxy: host and content-length are recalculated
+     *    by the HTTP client for the upstream request and must not be forwarded from
+     *    the client request.
      *
      * References:
-     * - RFC 9110 (HTTP Semantics), "Connection" and hop-by-hop header fields
+     * - RFC 9110 (HTTP Semantics), Section 7.6.1 "Connection"
      * - RFC 9112 (HTTP/1.1), message framing and connection management
      */
-    const hopByHopHeaders = new Set([
+    const blockedHeaders = new Set([
       'connection',
       'keep-alive',
       'proxy-authenticate',
       'proxy-authorization',
       'te',
-      'trailers',
+      'trailer',
       'transfer-encoding',
       'upgrade',
       'host',
@@ -143,7 +144,7 @@ export class ProxyController {
 
     return Object.entries(headers).reduce<Record<string, string>>((acc, [key, value]) => {
       const normalizedKey = key.toLowerCase();
-      if (hopByHopHeaders.has(normalizedKey)) {
+      if (blockedHeaders.has(normalizedKey)) {
         return acc;
       }
 

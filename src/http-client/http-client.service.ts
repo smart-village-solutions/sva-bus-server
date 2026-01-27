@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { RequestInit, Response as UndiciResponse } from 'undici';
 import { Agent, fetch } from 'undici';
@@ -17,7 +17,7 @@ export interface HttpClientRawResponse<T> {
 }
 
 @Injectable()
-export class HttpClientService {
+export class HttpClientService implements OnModuleDestroy {
   private readonly logger = new Logger(HttpClientService.name);
   private readonly baseUrl: string;
   private readonly defaultTimeoutMs: number;
@@ -42,6 +42,10 @@ export class HttpClientService {
 
   async post<T>(path: string, body: unknown, options?: HttpRequestOptions): Promise<T> {
     return this.request<T>('POST', path, body, options);
+  }
+
+  onModuleDestroy(): void {
+    this.dispatcher.close();
   }
 
   async requestRaw<T>(
@@ -131,7 +135,7 @@ export class HttpClientService {
         {
           method,
           headers: this.buildHeaders(options?.headers, body),
-          body: body ? JSON.stringify(body) : undefined,
+          body: body === undefined ? undefined : JSON.stringify(body),
           signal,
           dispatcher: this.dispatcher,
         },
@@ -210,7 +214,7 @@ export class HttpClientService {
     headers: Record<string, string> | undefined,
     body: unknown,
   ): Record<string, string> {
-    if (!body) {
+    if (body === undefined) {
       return headers ?? {};
     }
 
