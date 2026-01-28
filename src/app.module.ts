@@ -1,6 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+
+import { CacheModule } from './cache/cache.module';
+import { envValidationSchema } from './config/env.validation';
 import { HealthModule } from './health/health.module';
+import { HttpClientModule } from './http-client/http-client.module';
 
 @Module({
   imports: [
@@ -8,7 +12,13 @@ import { HealthModule } from './health/health.module';
       isGlobal: true,
       envFilePath: ['.env'],
       cache: true,
+      validationSchema: envValidationSchema,
+      validationOptions: {
+        abortEarly: false,
+      },
     }),
+    HttpClientModule,
+    CacheModule,
     HealthModule,
   ],
 })
