@@ -1,4 +1,13 @@
-import { BadGatewayException, Body, Controller, Get, Post, Req, Res } from '@nestjs/common';
+import {
+  BadGatewayException,
+  BadRequestException,
+  Body,
+  Controller,
+  Get,
+  Post,
+  Req,
+  Res,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
@@ -56,11 +65,15 @@ export class ProxyController {
         headers,
       });
       reply.status(response.status);
-      if (response.status === 204 || response.body === null) {
+      // 204/304 responses must not include a response body.
+      if (response.status === 204 || response.status === 304) {
         return undefined;
       }
       return response.body;
     } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
       throw new BadGatewayException({
         message: 'Upstream request failed',
         detail: error instanceof Error ? error.message : 'Unknown error',
@@ -68,6 +81,10 @@ export class ProxyController {
     }
   }
 
+  /**
+   * Extract the path portion for proxying and reject absolute URLs so clients
+   * cannot smuggle full upstream URLs ("scheme://") through the proxy.
+   */
   private extractPath(url: string): string {
     const path = url.split('?')[0] ?? '';
     const prefix = '/api/v1';
@@ -76,11 +93,15 @@ export class ProxyController {
       return '/';
     }
 
-    if (path.startsWith(`${prefix}/`)) {
-      return path.slice(prefix.length);
+    if (path.includes('://')) {
+      throw new BadRequestException('Invalid proxy path');
     }
 
-    return path || '/';
+    if (path.startsWith(`${prefix}/`)) {
+      return (path.slice(prefix.length) || '/').replace(/^\/+/, '/');
+    }
+
+    return (path || '/').replace(/^\/+/, '/');
   }
 
   private extractQueryString(url: string): string | null {
@@ -131,6 +152,23 @@ export class ProxyController {
       'host',
       'content-length',
     ]);
+
+    // Normalize the connection header to a single token list so we apply the cleanup once.
+    // We read it because it can name additional hop-by-hop headers that must be stripped.
+    const connectionHeader = headers.connection as string | string[] | undefined;
+    const connectionTokens: string[] = [];
+    if (typeof connectionHeader === 'string') {
+      connectionTokens.push(...connectionHeader.split(','));
+    } else if (Array.isArray(connectionHeader)) {
+      connectionHeader.forEach((value) => {
+        connectionTokens.push(...value.split(','));
+      });
+    }
+
+    connectionTokens
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => value.length > 0)
+      .forEach((value) => blockedHeaders.add(value));
 
     const allowlistedHeaders = new Set([
       'accept',

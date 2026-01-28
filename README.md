@@ -63,6 +63,7 @@ curl -X POST "http://localhost:3000/api/v1/example" -H "content-type: applicatio
 Notes:
 
 - The proxy currently has no authentication or rate limiting. Add those before exposing it publicly.
+- The proxy always injects the upstream `api_key`, so protect `/api/v1` behind auth/rate limiting or keep it on an internal network.
 - The proxy forwards only allowlisted headers (`accept`, `accept-encoding`, `accept-language`, `authorization`, `content-type`, `user-agent`, `api_key`, and `x-*`).
 
 ## Cache Usage Example

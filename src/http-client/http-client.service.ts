@@ -53,6 +53,14 @@ export class HttpClientService implements OnModuleDestroy {
     await this.dispatcher.close();
   }
 
+  /**
+   * Perform a request and return the raw status/body so callers (e.g. the proxy)
+   * can forward upstream errors without converting them into exceptions.
+   * Retries are limited to idempotent GET requests and only for retryable failures.
+   * We keep the lastResponse so if the upstream replied (even with 4xx/5xx) we can
+   * return that response after retries; only the final non-retryable error causes a throw
+   * when no valid response is available.
+   */
   async requestRaw<T>(
     method: 'GET' | 'POST',
     path: string,
@@ -64,11 +72,29 @@ export class HttpClientService implements OnModuleDestroy {
     const retries = options?.retries ?? this.defaultRetries;
     const effectiveRetries = method === 'GET' ? retries : 0;
     let lastError: unknown;
+    let lastResponse: HttpClientRawResponse<T> | null = null;
 
     for (let attempt = 0; attempt <= effectiveRetries; attempt += 1) {
       try {
         const response = await this.executeRequest<T>(method, url, body, options, timeoutMs);
-        return { status: response.status, body: response.body };
+        const rawResponse = {
+          status: response.status,
+          body: response.body,
+        } as HttpClientRawResponse<T>;
+
+        if (response.ok) {
+          return rawResponse;
+        }
+
+        lastResponse = rawResponse;
+        if (response.status >= 500 && response.status < 600 && attempt < effectiveRetries) {
+          this.logger.warn(
+            `HTTP ${method} ${url} failed with status ${response.status} (attempt ${attempt + 1}/${effectiveRetries + 1}). Retrying.`,
+          );
+          continue;
+        }
+
+        return rawResponse;
       } catch (error) {
         lastError = error;
         const shouldRetry = this.isRetryableError(error);
@@ -82,9 +108,22 @@ export class HttpClientService implements OnModuleDestroy {
       }
     }
 
+    if (lastError && !this.isRetryableError(lastError)) {
+      throw lastError;
+    }
+
+    if (lastResponse) {
+      return lastResponse;
+    }
+
     throw lastError;
   }
 
+  /**
+   * Perform a request that throws on non-2xx responses so callers can rely on
+   * exceptions for error handling. Retries are limited to idempotent GET requests
+   * and only for retryable failures.
+   */
   private async request<T>(
     method: 'GET' | 'POST',
     path: string,
@@ -216,7 +255,7 @@ export class HttpClientService implements OnModuleDestroy {
     query?: Record<string, string | number | boolean | undefined>,
   ): string {
     if (!this.baseUrl && !path.startsWith('http://') && !path.startsWith('https://')) {
-      throw new Error('HTTP client base URL is not configured');
+      throw new Error('HTTP client base URL is not configured properly');
     }
 
     const url = this.baseUrl ? new URL(path, this.baseUrl) : new URL(path);
@@ -232,26 +271,55 @@ export class HttpClientService implements OnModuleDestroy {
     return url.toString();
   }
 
+  /**
+   * Determines whether an error is retryable based on its type and HTTP status code.
+   *
+   * @param error - The error to evaluate for retry eligibility
+   * @returns `true` if the error should be retried, `false` otherwise
+   *
+   * @remarks
+   * The following errors are NOT retryable:
+   * - Non-object or null values
+   * - `SyntaxError` instances (parsing errors)
+   * - `AbortError` (user-initiated cancellations)
+   * - 4xx client errors (400-499) - these indicate client-side issues
+   *
+   * The following errors ARE retryable:
+   * - 5xx server errors (500-599) - temporary server issues
+   * - Network errors without status codes (connection failures, timeouts, etc.)
+   */
   private isRetryableError(error: unknown): boolean {
     if (!error || typeof error !== 'object') {
       return false;
     }
 
-    const httpError = error as HttpError;
+    if (error instanceof SyntaxError) {
+      return false;
+    }
+
+    const httpError = error as HttpError & { name?: string };
+
+    if (httpError.name === 'AbortError') {
+      return false;
+    }
+
+    // Status may be missing or not a number (e.g. network errors, foreign error objects).
+    // We explicitly check for number so the retry logic only evaluates actual HTTP status codes.
+    const status = httpError.status;
 
     // Don't retry 4xx client errors (400-499)
-    if (httpError.status && httpError.status >= 400 && httpError.status < 500) {
+    if (typeof status === 'number' && status >= 400 && status < 500) {
       return false;
     }
 
     // Retry 5xx server errors (500-599)
-    if (httpError.status && httpError.status >= 500 && httpError.status < 600) {
+    if (typeof status === 'number' && status >= 500 && status < 600) {
       return true;
     }
 
     // Retry network errors, timeouts, and other transient failures
     // (these won't have a status property)
-    return !httpError.status;
+    return typeof status !== 'number';
   }
 
   private buildHeaders(
@@ -263,8 +331,8 @@ export class HttpClientService implements OnModuleDestroy {
     }
 
     return {
-      'content-type': 'application/json',
       ...(headers ?? {}),
+      'content-type': 'application/json',
     };
   }
 

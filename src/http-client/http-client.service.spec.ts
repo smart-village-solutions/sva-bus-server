@@ -98,7 +98,7 @@ describe('HttpClientService', () => {
     const localService = module.get<HttpClientService>(HttpClientService);
 
     await expect(localService.get('/missing')).rejects.toThrow(
-      'HTTP client base URL is not configured',
+      'HTTP client base URL is not configured properly',
     );
   });
 
