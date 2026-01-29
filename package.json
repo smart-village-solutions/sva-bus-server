@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "description": "NestJS + Fastify API proxy für die TSA Infodienste API",
-  "license": "UNLICENSED",
+  "license": "EUPL-1.2",
   "main": "dist/main.js",
   "scripts": {
     "start": "node dist/main.js",
