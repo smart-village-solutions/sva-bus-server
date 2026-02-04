@@ -102,6 +102,38 @@ describe('HttpClientService', () => {
     );
   });
 
+  it('throws when base URL includes a path', async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        HttpClientService,
+        {
+          provide: ConfigService,
+          useValue: {
+            get: (key: string) => {
+              if (key === 'HTTP_CLIENT_BASE_URL') {
+                return 'https://example.com/base/';
+              }
+              if (key === 'HTTP_CLIENT_TIMEOUT') {
+                return 5000;
+              }
+              if (key === 'HTTP_CLIENT_RETRIES') {
+                return 0;
+              }
+              return undefined;
+            },
+          },
+        },
+      ],
+    }).compile();
+
+    const localService = module.get<HttpClientService>(HttpClientService);
+
+    await expect(localService.get('/test')).rejects.toThrow(
+      'HTTP client base URL must not include a path',
+    );
+    expect(mockedFetch).not.toHaveBeenCalled();
+  });
+
   it('aborts requests when the signal is cancelled', async () => {
     mockedFetch.mockImplementation((_, init) => {
       return new Promise((_, reject) => {

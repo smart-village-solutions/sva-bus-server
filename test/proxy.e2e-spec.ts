@@ -8,8 +8,15 @@ import { HttpClientService } from '../src/http-client/http-client.service';
 describe('Proxy endpoint (e2e)', () => {
   let app: NestFastifyApplication;
   let httpClientService: { requestRaw: jest.Mock };
+  let originalBaseUrl: string | undefined;
+  let originalBodyLimit: string | undefined;
 
   beforeAll(async () => {
+    originalBaseUrl = process.env.HTTP_CLIENT_BASE_URL;
+    originalBodyLimit = process.env.PROXY_BODY_LIMIT;
+    process.env.HTTP_CLIENT_BASE_URL = 'https://example.com';
+    delete process.env.PROXY_BODY_LIMIT;
+
     httpClientService = {
       requestRaw: jest.fn(),
     };
@@ -31,7 +38,10 @@ describe('Proxy endpoint (e2e)', () => {
       .useValue(httpClientService)
       .compile();
 
-    app = moduleFixture.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
+    const bodyLimit = Number(process.env.PROXY_BODY_LIMIT ?? 1048576);
+    app = moduleFixture.createNestApplication<NestFastifyApplication>(
+      new FastifyAdapter({ bodyLimit }),
+    );
     await app.init();
     await app.getHttpAdapter().getInstance().ready();
   });
@@ -42,6 +52,16 @@ describe('Proxy endpoint (e2e)', () => {
 
   afterAll(async () => {
     await app.close();
+    if (originalBaseUrl === undefined) {
+      delete process.env.HTTP_CLIENT_BASE_URL;
+    } else {
+      process.env.HTTP_CLIENT_BASE_URL = originalBaseUrl;
+    }
+    if (originalBodyLimit === undefined) {
+      delete process.env.PROXY_BODY_LIMIT;
+    } else {
+      process.env.PROXY_BODY_LIMIT = originalBodyLimit;
+    }
   });
 
   it('forwards GET requests', async () => {
@@ -156,6 +176,29 @@ describe('Proxy endpoint (e2e)', () => {
     expect(callOptions?.headers).not.toHaveProperty('connection');
     expect(callOptions?.headers).not.toHaveProperty('host');
     expect(callOptions?.headers).not.toHaveProperty('transfer-encoding');
+  });
+
+  it('filters x-forwarded headers', async () => {
+    httpClientService.requestRaw.mockResolvedValueOnce({ status: 200, body: { ok: true } });
+
+    await app.inject({
+      method: 'GET',
+      url: '/api/v1/headers-forwarded',
+      headers: {
+        'x-forwarded-for': '203.0.113.1',
+        'x-forwarded-host': 'example.com',
+        'x-forwarded-proto': 'https',
+        'x-real-ip': '203.0.113.2',
+        'x-request-id': 'req-2',
+      },
+    });
+
+    const callOptions = httpClientService.requestRaw.mock.calls[0]?.[3];
+    expect(callOptions?.headers).toEqual(expect.objectContaining({ 'x-request-id': 'req-2' }));
+    expect(callOptions?.headers).not.toHaveProperty('x-forwarded-for');
+    expect(callOptions?.headers).not.toHaveProperty('x-forwarded-host');
+    expect(callOptions?.headers).not.toHaveProperty('x-forwarded-proto');
+    expect(callOptions?.headers).not.toHaveProperty('x-real-ip');
   });
 
   it('filters non-allowlisted headers', async () => {
@@ -283,6 +326,22 @@ describe('Proxy endpoint (e2e)', () => {
     });
 
     expect(response.statusCode).toBe(404);
+    expect(httpClientService.requestRaw).not.toHaveBeenCalled();
+  });
+
+  it('rejects payloads larger than 1mb by default', async () => {
+    const payload = JSON.stringify({ data: 'a'.repeat(1048577) });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/v1/too-large',
+      headers: {
+        'content-type': 'application/json',
+      },
+      payload,
+    });
+
+    expect(response.statusCode).toBe(413);
     expect(httpClientService.requestRaw).not.toHaveBeenCalled();
   });
 });

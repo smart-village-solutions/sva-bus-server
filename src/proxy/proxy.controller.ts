@@ -7,6 +7,7 @@ import {
   Post,
   Req,
   Res,
+  UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -46,6 +47,9 @@ export class ProxyController {
     @Body() body: unknown,
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<unknown> {
+    if (body !== undefined && !this.isJsonContentType(request.headers['content-type'])) {
+      throw new UnsupportedMediaTypeException('Only application/json payloads are supported');
+    }
     return this.forwardRequest('POST', request, body, reply);
   }
 
@@ -76,7 +80,6 @@ export class ProxyController {
       }
       throw new BadGatewayException({
         message: 'Upstream request failed',
-        detail: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   }
@@ -151,6 +154,11 @@ export class ProxyController {
       'upgrade',
       'host',
       'content-length',
+      'x-forwarded-for',
+      'x-forwarded-host',
+      'x-forwarded-proto',
+      'x-forwarded-port',
+      'x-real-ip',
     ]);
 
     // Normalize the connection header to a single token list so we apply the cleanup once.
@@ -223,5 +231,17 @@ export class ProxyController {
     }
 
     return this.apiKey;
+  }
+
+  private isJsonContentType(contentType: string | string[] | undefined): boolean {
+    if (!contentType) {
+      return false;
+    }
+
+    const value = Array.isArray(contentType) ? contentType.join(',') : contentType;
+    return value
+      .split(',')
+      .map((entry) => entry.trim().toLowerCase())
+      .some((entry) => entry.includes('application/json') || entry.includes('+json'));
   }
 }

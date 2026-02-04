@@ -254,11 +254,23 @@ export class HttpClientService implements OnModuleDestroy {
     path: string,
     query?: Record<string, string | number | boolean | undefined>,
   ): string {
-    if (!this.baseUrl && !path.startsWith('http://') && !path.startsWith('https://')) {
+    if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('//')) {
+      throw new Error('Absolute proxy URLs are not allowed');
+    }
+
+    if (!this.baseUrl) {
       throw new Error('HTTP client base URL is not configured properly');
     }
 
-    const url = this.baseUrl ? new URL(path, this.baseUrl) : new URL(path);
+    const baseUrl = new URL(this.baseUrl);
+    if (baseUrl.pathname && baseUrl.pathname !== '/') {
+      throw new Error('HTTP client base URL must not include a path');
+    }
+    const url = new URL(path, baseUrl);
+
+    if (url.origin !== baseUrl.origin) {
+      throw new Error('Proxy path resolves outside the configured base URL');
+    }
 
     if (query) {
       Object.entries(query).forEach(([key, value]) => {
@@ -345,7 +357,12 @@ export class HttpClientService implements OnModuleDestroy {
     }
 
     if (contentType.includes('application/json')) {
-      return JSON.parse(text);
+      try {
+        return JSON.parse(text);
+      } catch (error) {
+        this.logger.warn('Failed to parse upstream JSON response, returning raw text instead.');
+        return text;
+      }
     }
 
     return text;
