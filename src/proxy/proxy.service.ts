@@ -26,6 +26,15 @@ export class ProxyService {
     this.cacheDebug = this.parseBoolean(this.configService.get('CACHE_DEBUG'));
   }
 
+  /**
+   * Masks an API key for logging purposes by showing only the first 4 characters.
+   * @param apiKey - The API key to mask
+   * @returns Masked API key (e.g., "1234***") or undefined if no key provided
+   */
+  private maskApiKey(apiKey?: string): string | undefined {
+    return apiKey ? `${apiKey.substring(0, 4)}***` : undefined;
+  }
+
   async forward<T>(
     method: 'GET' | 'POST',
     path: string,
@@ -49,9 +58,7 @@ export class ProxyService {
             headers: {
               accept: options?.headers?.accept,
               'accept-language': options?.headers?.['accept-language'],
-              api_key: options?.headers?.api_key
-                ? `${options.headers.api_key.substring(0, 4)}***`
-                : undefined,
+              api_key: this.maskApiKey(options?.headers?.api_key),
               authorization: Boolean(options?.headers?.authorization),
             },
             bypassPaths: this.bypassPaths,
@@ -75,9 +82,7 @@ export class ProxyService {
           headers: {
             accept: options?.headers?.accept,
             'accept-language': options?.headers?.['accept-language'],
-            api_key: options?.headers?.api_key
-              ? `${options.headers.api_key.substring(0, 4)}***`
-              : undefined,
+            api_key: this.maskApiKey(options?.headers?.api_key),
             authorization: Boolean(options?.headers?.authorization),
           },
           ignoreUpstreamControl: this.ignoreUpstreamControl,
