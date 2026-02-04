@@ -4,8 +4,12 @@ import { AppModule } from '../src/app.module';
 
 describe('Health endpoint (e2e)', () => {
   let app: NestFastifyApplication;
+  let originalBaseUrl: string | undefined;
 
   beforeAll(async () => {
+    originalBaseUrl = process.env.HTTP_CLIENT_BASE_URL;
+    process.env.HTTP_CLIENT_BASE_URL = 'https://example.com';
+
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -17,6 +21,11 @@ describe('Health endpoint (e2e)', () => {
 
   afterAll(async () => {
     await app.close();
+    if (originalBaseUrl === undefined) {
+      delete process.env.HTTP_CLIENT_BASE_URL;
+    } else {
+      process.env.HTTP_CLIENT_BASE_URL = originalBaseUrl;
+    }
   });
 
   it('GET /health', async () => {

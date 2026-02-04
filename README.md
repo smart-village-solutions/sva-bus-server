@@ -27,11 +27,17 @@ cp .env.example .env
 ### Required settings
 
 - `HTTP_CLIENT_BASE_URL`: Base URL for upstream API calls
+- `HTTP_CLIENT_BASE_URL` must be origin-only (no path segment), so `/api/v1/*` maps 1:1 to upstream paths
 - `HTTP_CLIENT_TIMEOUT`: Request timeout in milliseconds
 - `HTTP_CLIENT_RETRIES`: Retry attempts for upstream calls
 - `CACHE_REDIS_URL`: Redis connection string
 - `CACHE_TTL_DEFAULT`: Default cache TTL (seconds)
 - `CACHE_STALE_TTL`: Stale-while-revalidate window (seconds)
+
+### Optional settings
+
+- `HTTP_CLIENT_API_KEY`: API key sent as `api_key` header to the upstream API when the client does not provide one
+- `PROXY_BODY_LIMIT`: Max JSON body size in bytes (default: 1048576)
 
 ## Health Check
 
@@ -39,11 +45,37 @@ cp .env.example .env
 curl http://localhost:3000/health
 ```
 
+Health endpoints report the proxy application's status (and cache) only; they are intentionally not part of the versioned upstream API.
+
 Cache connectivity check:
 
 ```bash
 curl http://localhost:3000/health/cache
 ```
+
+## Proxy Endpoints
+
+Proxy requests to the upstream API via `/api/v1` (forwards allowlisted headers and automatically adds `api_key` header if configured):
+
+Versioning applies only to proxied upstream requests; service health endpoints remain unversioned.
+
+The upstream base URL must be origin-only (no path segment) so proxy routes can map directly to upstream paths.
+
+```bash
+curl "http://localhost:3000/api/v1/test?foo=bar"
+```
+
+POST requests forward JSON bodies:
+
+```bash
+curl -X POST "http://localhost:3000/api/v1/example" -H "content-type: application/json" -d '{"key":"value"}'
+```
+
+Notes:
+
+- The proxy currently has no authentication or rate limiting. Add those before exposing it publicly.
+- The proxy injects the upstream `api_key` only when the client does not already provide one, so protect `/api/v1` behind auth/rate limiting or keep it on an internal network.
+- The proxy forwards only allowlisted headers (`accept`, `accept-encoding`, `accept-language`, `authorization`, `content-type`, `user-agent`, `api_key`, and `x-*`).
 
 ## Cache Usage Example
 

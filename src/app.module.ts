@@ -5,6 +5,7 @@ import { CacheModule } from './cache/cache.module';
 import { envValidationSchema } from './config/env.validation';
 import { HealthModule } from './health/health.module';
 import { HttpClientModule } from './http-client/http-client.module';
+import { ProxyModule } from './proxy/proxy.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { HttpClientModule } from './http-client/http-client.module';
     HttpClientModule,
     CacheModule,
     HealthModule,
+    ProxyModule,
   ],
 })
 export class AppModule {}
