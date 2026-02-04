@@ -1,4 +1,4 @@
-import { deriveProxyCachePolicy, shouldBypassProxyCache } from './proxy-cache';
+import { buildProxyCacheKey, deriveProxyCachePolicy, shouldBypassProxyCache } from './proxy-cache';
 
 describe('proxy cache policy', () => {
   it('bypasses cache for non-2xx responses', () => {
@@ -65,5 +65,66 @@ describe('proxy cache policy', () => {
     );
 
     expect(policy.cacheable).toBe(true);
+  });
+});
+
+describe('buildProxyCacheKey', () => {
+  it('builds cache key with method and path', () => {
+    const key = buildProxyCacheKey('GET', '/api/test');
+    expect(key).toContain('proxy:GET:/api/test:');
+  });
+
+  it('includes normalized headers in cache key', () => {
+    const key1 = buildProxyCacheKey('GET', '/api/test', {
+      accept: 'application/json',
+      'accept-language': 'en-US',
+    });
+    const key2 = buildProxyCacheKey('GET', '/api/test', {
+      accept: 'application/xml',
+      'accept-language': 'en-US',
+    });
+
+    expect(key1).not.toBe(key2);
+  });
+
+  it('does not expose API key in cleartext', () => {
+    const apiKey = 'secret-api-key-12345';
+    const key = buildProxyCacheKey('GET', '/api/test', {
+      api_key: apiKey,
+    });
+
+    // Cache key should not contain the cleartext API key
+    expect(key).not.toContain(apiKey);
+    expect(key).not.toContain('secret-api-key');
+  });
+
+  it('generates different cache keys for different API keys', () => {
+    const key1 = buildProxyCacheKey('GET', '/api/test', {
+      api_key: 'key-1',
+    });
+    const key2 = buildProxyCacheKey('GET', '/api/test', {
+      api_key: 'key-2',
+    });
+
+    // Different API keys should produce different cache keys
+    expect(key1).not.toBe(key2);
+  });
+
+  it('generates same cache key for same API key', () => {
+    const apiKey = 'consistent-key';
+    const key1 = buildProxyCacheKey('GET', '/api/test', {
+      api_key: apiKey,
+    });
+    const key2 = buildProxyCacheKey('GET', '/api/test', {
+      api_key: apiKey,
+    });
+
+    // Same API key should produce same cache key
+    expect(key1).toBe(key2);
+  });
+
+  it('handles missing API key', () => {
+    const key = buildProxyCacheKey('GET', '/api/test');
+    expect(key).toContain('proxy:GET:/api/test:');
   });
 });

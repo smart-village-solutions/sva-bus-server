@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import type { HttpClientRawResponse } from '../http-client/http-client.service';
 
 // Cache status meanings for proxy responses:
@@ -56,7 +58,9 @@ export function buildProxyCacheKey(
   const accept = normalizeHeaderValue(headers?.accept);
   const acceptLanguage = normalizeHeaderValue(headers?.['accept-language']);
   const apiKey = normalizeHeaderValue(headers?.api_key);
-  const headerFingerprint = [accept, acceptLanguage, apiKey].join('|');
+  // Hash the API key to avoid exposing sensitive data in cache keys and logs
+  const apiKeyHash = apiKey ? hashApiKey(apiKey) : '';
+  const headerFingerprint = [accept, acceptLanguage, apiKeyHash].join('|');
   return `proxy:${method}:${path}:${headerFingerprint}`;
 }
 
@@ -102,6 +106,12 @@ function normalizeHeaderValue(value: string | undefined): string {
     return '';
   }
   return value.trim().toLowerCase();
+}
+
+function hashApiKey(apiKey: string): string {
+  // Use SHA-256 to create a one-way hash of the API key
+  // This ensures the cache key remains unique per API key without exposing the key itself
+  return createHash('sha256').update(apiKey).digest('hex');
 }
 
 function normalizePath(value: string): string {
