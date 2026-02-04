@@ -94,7 +94,7 @@ Caching rules:
 - `CACHE_IGNORE_UPSTREAM_CONTROL=true` ignores upstream cache directives and always uses local TTLs.
 - `CACHE_BYPASS_PATHS` entries (e.g. `/health`) are never cached.
 
-Responses include an `x-cache` header with `HIT`, `MISS`, `STALE`, or `BYPASS` to aid debugging.
+Cache-relevant GET responses include an `x-cache` header with `HIT`, `MISS`, `STALE`, or `BYPASS` to make cache behavior easier to trace.
 
 ## Cache Usage Example
 

@@ -1,12 +1,5 @@
 import type { HttpClientRawResponse } from '../http-client/http-client.service';
 
-// Cache status meanings for proxy responses:
-// - HIT: response served from cache
-// - MISS: response fetched from upstream and cached
-// - STALE: stale cache entry served; refresh in background
-// - BYPASS: caching skipped (e.g. auth header, bypass path, or cache unavailable)
-export type ProxyCacheStatus = 'HIT' | 'MISS' | 'STALE' | 'BYPASS';
-
 export type ProxyCachePolicy = {
   cacheable: boolean;
   ttlSeconds?: number;

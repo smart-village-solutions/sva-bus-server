@@ -3,6 +3,11 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Cache } from 'cache-manager';
 
+// Cache status meanings:
+// - HIT: response served from cache
+// - MISS: response fetched from upstream and cached
+// - STALE: stale cache entry served; refresh in background
+// - BYPASS: caching skipped (e.g. auth header, bypass path, or cache unavailable)
 export type CacheStatus = 'HIT' | 'MISS' | 'STALE' | 'BYPASS';
 
 export type CacheableResult<T> = {
@@ -30,6 +35,7 @@ type CacheStoreClient = {
 type CacheStore = {
   client?: CacheStoreClient;
   isFallback?: boolean;
+  isRedis?: boolean;
   name?: string;
 };
 
@@ -288,7 +294,7 @@ export class CacheService {
 
   private getTtlUnit(): 's' | 'ms' {
     const store = (this.cacheManager as { store?: CacheStore }).store;
-    if (store?.name === 'redis') {
+    if (store?.isRedis || store?.name === 'redis') {
       return 'ms';
     }
     return 's';
