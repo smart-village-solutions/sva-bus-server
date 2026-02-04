@@ -1,15 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import type { HttpClientRawResponse, HttpRequestOptions } from '../http-client/http-client.service';
-import { HttpClientService } from '../http-client/http-client.service';
 import type { CacheStatus } from '../cache/cache.service';
 import { CacheService } from '../cache/cache.service';
-import {
-  buildProxyCacheKey,
-  deriveProxyCachePolicy,
-  shouldBypassProxyCache,
-} from './proxy-cache';
+import type { HttpClientRawResponse, HttpRequestOptions } from '../http-client/http-client.service';
+import { HttpClientService } from '../http-client/http-client.service';
+import { buildProxyCacheKey, deriveProxyCachePolicy, shouldBypassProxyCache } from './proxy-cache';
 
 @Injectable()
 export class ProxyService {

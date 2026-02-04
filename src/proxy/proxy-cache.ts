@@ -1,3 +1,5 @@
+import { createHash } from 'crypto';
+
 import type { HttpClientRawResponse } from '../http-client/http-client.service';
 
 // Cache status meanings for proxy responses:
@@ -55,7 +57,8 @@ export function buildProxyCacheKey(
   // Normalize selected headers into the cache key to prevent variant collisions.
   const accept = normalizeHeaderValue(headers?.accept);
   const acceptLanguage = normalizeHeaderValue(headers?.['accept-language']);
-  const apiKey = normalizeHeaderValue(headers?.api_key);
+  // Hash api_key to avoid case-sensitivity issues and prevent plaintext credential exposure in cache keys
+  const apiKey = hashCredential(headers?.api_key);
   const headerFingerprint = [accept, acceptLanguage, apiKey].join('|');
   return `proxy:${method}:${path}:${headerFingerprint}`;
 }
@@ -102,6 +105,14 @@ function normalizeHeaderValue(value: string | undefined): string {
     return '';
   }
   return value.trim().toLowerCase();
+}
+
+function hashCredential(value: string | undefined): string {
+  if (!value || value.trim().length === 0) {
+    return '';
+  }
+  // Use SHA-256 to create a fingerprint of the credential without exposing it in plaintext
+  return createHash('sha256').update(value.trim()).digest('hex');
 }
 
 function normalizePath(value: string): string {

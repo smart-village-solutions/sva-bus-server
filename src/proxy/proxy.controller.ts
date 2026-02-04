@@ -65,9 +65,14 @@ export class ProxyController {
     const headers = this.buildForwardHeaders(request);
 
     try {
-      const { response, cacheStatus } = await this.proxyService.forward(method, pathWithQuery, body, {
-        headers,
-      });
+      const { response, cacheStatus } = await this.proxyService.forward(
+        method,
+        pathWithQuery,
+        body,
+        {
+          headers,
+        },
+      );
       reply.status(response.status);
       Object.entries(response.headers ?? {}).forEach(([key, value]) => {
         reply.header(key, value);
