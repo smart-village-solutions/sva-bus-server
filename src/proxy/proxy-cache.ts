@@ -58,7 +58,7 @@ export function buildProxyCacheKey(
   const accept = normalizeHeaderValue(headers?.accept);
   const acceptLanguage = normalizeHeaderValue(headers?.['accept-language']);
   // Hash api_key to avoid case-sensitivity issues and prevent plaintext credential exposure in cache keys
-  const apiKey = hashCredential(headers?.api_key);
+  const apiKey = hashCredential(headers?.api_key, method, path);
   const headerFingerprint = [accept, acceptLanguage, apiKey].join('|');
   return `proxy:${method}:${path}:${headerFingerprint}`;
 }
@@ -107,12 +107,13 @@ function normalizeHeaderValue(value: string | undefined): string {
   return value.trim().toLowerCase();
 }
 
-function hashCredential(value: string | undefined): string {
+function hashCredential(value: string | undefined, method: string, path: string): string {
   if (!value || value.trim().length === 0) {
     return '';
   }
   // Use SHA-256 to create a fingerprint of the credential without exposing it in plaintext
-  return createHash('sha256').update(value.trim()).digest('hex');
+  // Include method and path to add context and prevent rainbow table attacks
+  return createHash('sha256').update(`${method}:${path}:${value.trim()}`).digest('hex');
 }
 
 function normalizePath(value: string): string {

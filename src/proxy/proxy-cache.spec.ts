@@ -125,4 +125,11 @@ describe('buildProxyCacheKey', () => {
     expect(cacheKey).not.toContain(apiKey);
     expect(cacheKey).not.toContain(apiKey.toLowerCase());
   });
+
+  it('treats api_key with whitespace consistently', () => {
+    const key1 = buildProxyCacheKey('GET', '/api/test', { api_key: 'secret123' });
+    const key2 = buildProxyCacheKey('GET', '/api/test', { api_key: '  secret123  ' });
+
+    expect(key1).toBe(key2);
+  });
 });
