@@ -311,9 +311,9 @@ export class CacheService {
   /**
    * Creates a safe fingerprint of a cache key for logging purposes.
    * This prevents sensitive data (e.g., API keys) from being exposed in logs.
-   * Returns the first 16 characters of a SHA-256 hash of the key.
+   * Returns the first 32 characters of a SHA-256 hash of the key.
    */
   private hashKeyForLogging(key: string): string {
-    return createHash('sha256').update(key).digest('hex').substring(0, 16);
+    return createHash('sha256').update(key).digest('hex').substring(0, 32);
   }
 }
