@@ -12,12 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Upstream API proxy endpoints for GET/POST under `/api/v1`, plus a root GET handler.
 - Proxy service to forward requests to the configured upstream API.
 - Allowlisted header forwarding (including `x-` headers) and API key injection via `HTTP_CLIENT_API_KEY`.
+- `PROXY_BODY_LIMIT` environment variable to cap incoming JSON payload size.
 - Proxy endpoint tests and expanded HTTP client test coverage.
 
 ### Changed
 
 - HTTP client supports raw response forwarding, uses an undici keep-alive dispatcher, and only retries GET requests.
 - Proxy now passes through raw query strings to upstream requests.
+- Proxy rejects absolute URL smuggling attempts and enforces JSON-only POST payloads.
+- Proxy strips hop-by-hop and `x-forwarded-*` headers before forwarding upstream.
 
 ## 0.2.0
 
