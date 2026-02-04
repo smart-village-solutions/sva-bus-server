@@ -9,7 +9,14 @@ describe('ProxyService', () => {
 
   beforeEach(async () => {
     httpClientService = {
-      requestRaw: jest.fn().mockResolvedValue({ status: 200, body: { ok: true } }),
+      requestRaw: jest.fn().mockResolvedValue({
+        status: 200,
+        body: { ok: true },
+        contentType: 'application/json',
+        headers: {
+          'cache-control': 'max-age=60',
+        },
+      }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -28,7 +35,14 @@ describe('ProxyService', () => {
   it('forwards requests to the HTTP client', async () => {
     await expect(
       service.forward('GET', '/example', undefined, { query: { foo: 'bar' } }),
-    ).resolves.toEqual({ status: 200, body: { ok: true } });
+    ).resolves.toEqual({
+      status: 200,
+      body: { ok: true },
+      contentType: 'application/json',
+      headers: {
+        'cache-control': 'max-age=60',
+      },
+    });
 
     expect(httpClientService.requestRaw).toHaveBeenCalledWith('GET', '/example', undefined, {
       query: { foo: 'bar' },

@@ -69,6 +69,12 @@ export class ProxyController {
         headers,
       });
       reply.status(response.status);
+      Object.entries(response.headers ?? {}).forEach(([key, value]) => {
+        reply.header(key, value);
+      });
+      if (response.contentType && response.status !== 204 && response.status !== 304) {
+        reply.header('content-type', response.contentType);
+      }
       // 204/304 responses must not include a response body.
       if (response.status === 204 || response.status === 304) {
         return undefined;

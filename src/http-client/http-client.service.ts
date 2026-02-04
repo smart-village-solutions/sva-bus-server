@@ -14,6 +14,8 @@ export interface HttpRequestOptions {
 export interface HttpClientRawResponse<T> {
   status: number;
   body: T | null;
+  contentType: string | null;
+  headers: Record<string, string>;
 }
 
 interface HttpError extends Error {
@@ -31,8 +33,11 @@ export class HttpClientService implements OnModuleDestroy {
 
   constructor(private readonly configService: ConfigService) {
     this.baseUrl = this.configService.get<string>('HTTP_CLIENT_BASE_URL') ?? '';
-    this.defaultTimeoutMs = Number(this.configService.get('HTTP_CLIENT_TIMEOUT') ?? 10000);
-    this.defaultRetries = Number(this.configService.get('HTTP_CLIENT_RETRIES') ?? 2);
+    this.defaultTimeoutMs = this.normalizeTimeoutMs(
+      this.configService.get('HTTP_CLIENT_TIMEOUT'),
+      10000,
+    );
+    this.defaultRetries = this.normalizeRetries(this.configService.get('HTTP_CLIENT_RETRIES'), 2);
     this.dispatcher = new Agent({
       connections: 50,
       pipelining: 0,
@@ -68,8 +73,8 @@ export class HttpClientService implements OnModuleDestroy {
     options?: HttpRequestOptions,
   ): Promise<HttpClientRawResponse<T>> {
     const url = this.buildUrl(path, options?.query);
-    const timeoutMs = options?.timeoutMs ?? this.defaultTimeoutMs;
-    const retries = options?.retries ?? this.defaultRetries;
+    const timeoutMs = this.normalizeTimeoutMs(options?.timeoutMs, this.defaultTimeoutMs);
+    const retries = this.normalizeRetries(options?.retries, this.defaultRetries);
     const effectiveRetries = method === 'GET' ? retries : 0;
     let lastError: unknown;
     let lastResponse: HttpClientRawResponse<T> | null = null;
@@ -80,6 +85,8 @@ export class HttpClientService implements OnModuleDestroy {
         const rawResponse = {
           status: response.status,
           body: response.body,
+          contentType: response.contentType,
+          headers: response.headers,
         } as HttpClientRawResponse<T>;
 
         if (response.ok) {
@@ -131,8 +138,8 @@ export class HttpClientService implements OnModuleDestroy {
     options?: HttpRequestOptions,
   ): Promise<T> {
     const url = this.buildUrl(path, options?.query);
-    const timeoutMs = options?.timeoutMs ?? this.defaultTimeoutMs;
-    const retries = options?.retries ?? this.defaultRetries;
+    const timeoutMs = this.normalizeTimeoutMs(options?.timeoutMs, this.defaultTimeoutMs);
+    const retries = this.normalizeRetries(options?.retries, this.defaultRetries);
     const effectiveRetries = method === 'GET' ? retries : 0;
     let lastError: unknown;
 
@@ -191,7 +198,13 @@ export class HttpClientService implements OnModuleDestroy {
     body: unknown,
     options: HttpRequestOptions | undefined,
     timeoutMs: number,
-  ): Promise<{ status: number; ok: boolean; body: T | null }> {
+  ): Promise<{
+    status: number;
+    ok: boolean;
+    body: T | null;
+    contentType: string | null;
+    headers: Record<string, string>;
+  }> {
     const controller = new AbortController();
     const signal = this.attachAbortSignal(controller, options?.signal);
 
@@ -208,9 +221,17 @@ export class HttpClientService implements OnModuleDestroy {
       controller,
     );
 
-    const responseBody = await this.parseResponseBody(response);
+    const contentType = response.headers.get('content-type') ?? '';
+    const responseBody = await this.parseResponseBody(response, contentType);
+    const responseHeaders = this.extractForwardHeaders(response);
 
-    return { status: response.status, ok: response.ok, body: responseBody as T | null };
+    return {
+      status: response.status,
+      ok: response.ok,
+      body: responseBody as T | null,
+      contentType: contentType.length > 0 ? contentType : null,
+      headers: responseHeaders,
+    };
   }
 
   private async fetchWithTimeout(
@@ -348,8 +369,10 @@ export class HttpClientService implements OnModuleDestroy {
     };
   }
 
-  private async parseResponseBody(response: UndiciResponse): Promise<unknown> {
-    const contentType = response.headers.get('content-type') ?? '';
+  private async parseResponseBody(
+    response: UndiciResponse,
+    contentType: string,
+  ): Promise<unknown> {
     const text = await response.text();
 
     if (!text) {
@@ -366,5 +389,41 @@ export class HttpClientService implements OnModuleDestroy {
     }
 
     return text;
+  }
+
+  private extractForwardHeaders(response: UndiciResponse): Record<string, string> {
+    const allowlistedHeaders = [
+      'cache-control',
+      'etag',
+      'last-modified',
+      'expires',
+      'vary',
+      'content-encoding',
+      'content-language',
+      'content-disposition',
+    ];
+    return allowlistedHeaders.reduce<Record<string, string>>((acc, header) => {
+      const value = response.headers.get(header);
+      if (value) {
+        acc[header] = value;
+      }
+      return acc;
+    }, {});
+  }
+
+  private normalizeTimeoutMs(value: unknown, fallback: number): number {
+    const candidate = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(candidate) || candidate <= 0) {
+      return fallback;
+    }
+    return Math.floor(candidate);
+  }
+
+  private normalizeRetries(value: unknown, fallback: number): number {
+    const candidate = typeof value === 'number' ? value : Number(value);
+    if (!Number.isFinite(candidate) || candidate < 0) {
+      return fallback;
+    }
+    return Math.floor(candidate);
   }
 }

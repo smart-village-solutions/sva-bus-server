@@ -8,7 +8,8 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { AppModule } from './app.module';
 
 async function bootstrap(): Promise<void> {
-  const bodyLimit = Number(process.env.PROXY_BODY_LIMIT ?? 1048576);
+  const rawBodyLimit = Number(process.env.PROXY_BODY_LIMIT ?? 1048576);
+  const bodyLimit = Number.isFinite(rawBodyLimit) && rawBodyLimit >= 1024 ? rawBodyLimit : 1048576;
   const adapter = new FastifyAdapter({
     logger: {
       level: process.env.LOG_LEVEL ?? 'info',
