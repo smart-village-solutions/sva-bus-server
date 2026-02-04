@@ -32,7 +32,9 @@ export class ProxyService {
    * @returns Masked API key (e.g., "1234***") or undefined if no key provided
    */
   private maskApiKey(apiKey?: string): string | undefined {
-    return apiKey ? `${apiKey.substring(0, 4)}***` : undefined;
+    if (!apiKey) return undefined;
+    const prefixLength = Math.min(4, apiKey.length);
+    return `${apiKey.substring(0, prefixLength)}***`;
   }
 
   async forward<T>(
