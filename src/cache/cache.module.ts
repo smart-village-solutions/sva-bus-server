@@ -15,14 +15,18 @@ import { CacheService } from './cache.service';
         const ttl = Number(configService.get('CACHE_TTL_DEFAULT') ?? 300);
         const redisUrl = configService.get<string>('CACHE_REDIS_URL') ?? '';
 
-        const noopStore: CacheStore = {
+        const noopStore: CacheStore & { isFallback: boolean } = {
           get: async <T>() => undefined as T | undefined,
           set: async () => undefined,
           del: async () => undefined,
+          isFallback: true,
         };
 
         try {
-          const store = await redisStore({ url: redisUrl });
+          const store = (await redisStore({ url: redisUrl })) as CacheStore & {
+            isFallback?: boolean;
+          };
+          store.isFallback = false;
           return { ttl, store };
         } catch (error) {
           logger.warn('Redis cache unavailable; using no-op cache store.');

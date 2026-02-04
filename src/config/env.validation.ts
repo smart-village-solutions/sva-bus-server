@@ -33,4 +33,13 @@ export const envValidationSchema = Joi.object({
   CACHE_REDIS_URL: Joi.string().uri().default('redis://localhost:6379'),
   CACHE_TTL_DEFAULT: Joi.number().integer().min(1).default(300),
   CACHE_STALE_TTL: Joi.number().integer().min(0).default(60),
+  CACHE_IGNORE_UPSTREAM_CONTROL: Joi.boolean()
+    .truthy('true', '1', 'yes', 'y', 'on')
+    .falsy('false', '0', 'no', 'n', 'off')
+    .default(false),
+  CACHE_BYPASS_PATHS: Joi.string().allow('').default(''),
+  CACHE_DEBUG: Joi.boolean()
+    .truthy('true', '1', 'yes', 'y', 'on')
+    .falsy('false', '0', 'no', 'n', 'off')
+    .default(false),
 });

@@ -3,6 +3,20 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Cache } from 'cache-manager';
 
+export type CacheStatus = 'HIT' | 'MISS' | 'STALE' | 'BYPASS';
+
+export type CacheableResult<T> = {
+  value: T;
+  cacheable?: boolean;
+  ttl?: number;
+  staleTtl?: number;
+};
+
+export type CacheWrapResult<T> = {
+  value: T;
+  status: CacheStatus;
+};
+
 type CacheEntry<T> = {
   value: T;
   staleUntil?: number;
@@ -15,6 +29,8 @@ type CacheStoreClient = {
 
 type CacheStore = {
   client?: CacheStoreClient;
+  isFallback?: boolean;
+  name?: string;
 };
 
 @Injectable()
@@ -22,6 +38,7 @@ export class CacheService {
   private readonly logger = new Logger(CacheService.name);
   private readonly defaultTtlSeconds: number;
   private readonly defaultStaleTtlSeconds: number;
+  private readonly cacheDebug: boolean;
 
   constructor(
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
@@ -29,6 +46,7 @@ export class CacheService {
   ) {
     this.defaultTtlSeconds = Number(this.configService.get('CACHE_TTL_DEFAULT') ?? 300);
     this.defaultStaleTtlSeconds = Number(this.configService.get('CACHE_STALE_TTL') ?? 60);
+    this.cacheDebug = this.parseBoolean(this.configService.get('CACHE_DEBUG'));
   }
 
   async get<T>(key: string): Promise<T | null> {
@@ -49,24 +67,7 @@ export class CacheService {
     value: T,
     options?: { ttl?: number; staleTtl?: number },
   ): Promise<void> {
-    const ttl = options?.ttl ?? this.defaultTtlSeconds;
-    const staleTtl = options?.staleTtl ?? 0;
-
-    try {
-      if (staleTtl > 0) {
-        const entry: CacheEntry<T> = {
-          value,
-          staleUntil: Date.now() + ttl * 1000,
-          __cacheEntry: true,
-        };
-        await this.cacheManager.set(key, entry, ttl + staleTtl);
-        return;
-      }
-
-      await this.cacheManager.set(key, value, ttl);
-    } catch (error) {
-      this.logger.warn(`Cache set failed for ${key}`);
-    }
+    await this.setWithResult(key, value, options);
   }
 
   async del(key: string): Promise<void> {
@@ -99,6 +100,36 @@ export class CacheService {
     return value;
   }
 
+  async wrapCacheable<T>(
+    key: string,
+    loader: () => Promise<CacheableResult<T>>,
+    options?: { ttl?: number; staleTtl?: number },
+  ): Promise<CacheWrapResult<T>> {
+    if (!this.isCacheAvailable()) {
+      const result = await loader();
+      return { value: result.value, status: 'BYPASS' };
+    }
+
+    const entryState = await this.getEntryWithStatus<T>(key);
+
+    if (entryState) {
+      if (entryState.status === 'STALE') {
+        void this.refreshInBackgroundWithPolicy(key, loader, options);
+      }
+      return { value: entryState.entry.value, status: entryState.status };
+    }
+
+    const result = await loader();
+    if (result.cacheable === false) {
+      return { value: result.value, status: 'BYPASS' };
+    }
+
+    const ttl = result.ttl ?? options?.ttl ?? this.defaultTtlSeconds;
+    const staleTtl = result.staleTtl ?? options?.staleTtl ?? this.defaultStaleTtlSeconds;
+    const stored = await this.setWithResult(key, result.value, { ttl, staleTtl });
+    return { value: result.value, status: stored ? 'MISS' : 'BYPASS' };
+  }
+
   async checkHealth(): Promise<{ status: 'ok' | 'degraded'; message?: string }> {
     try {
       const store = (this.cacheManager as { store?: CacheStore }).store;
@@ -126,6 +157,21 @@ export class CacheService {
     }
   }
 
+  private async getEntryWithStatus<T>(
+    key: string,
+  ): Promise<{ entry: CacheEntry<T>; status: CacheStatus } | null> {
+    const entry = await this.getEntry<T>(key);
+    if (!entry) {
+      return null;
+    }
+
+    if (entry.staleUntil && Date.now() > entry.staleUntil) {
+      return { entry, status: 'STALE' };
+    }
+
+    return { entry, status: 'HIT' };
+  }
+
   private async refreshInBackground<T>(
     key: string,
     loader: () => Promise<T>,
@@ -140,6 +186,24 @@ export class CacheService {
     }
   }
 
+  private async refreshInBackgroundWithPolicy<T>(
+    key: string,
+    loader: () => Promise<CacheableResult<T>>,
+    options?: { ttl?: number; staleTtl?: number },
+  ): Promise<void> {
+    try {
+      const result = await loader();
+      if (result.cacheable === false) {
+        return;
+      }
+      const ttl = result.ttl ?? options?.ttl ?? this.defaultTtlSeconds;
+      const staleTtl = result.staleTtl ?? options?.staleTtl ?? this.defaultStaleTtlSeconds;
+      await this.setWithResult(key, result.value, { ttl, staleTtl });
+    } catch (error) {
+      this.logger.warn(`Cache refresh failed for ${key}`);
+    }
+  }
+
   private isCacheEntry<T>(entry: CacheEntry<T> | T): entry is CacheEntry<T> {
     return (
       typeof entry === 'object' &&
@@ -147,5 +211,97 @@ export class CacheService {
       '__cacheEntry' in entry &&
       (entry as CacheEntry<T>).__cacheEntry === true
     );
+  }
+
+  private async setWithResult<T>(
+    key: string,
+    value: T,
+    options?: { ttl?: number; staleTtl?: number },
+  ): Promise<boolean> {
+    const ttlSeconds = options?.ttl ?? this.defaultTtlSeconds;
+    const staleTtlSeconds = options?.staleTtl ?? 0;
+    // Redis expects ms TTL, so we normalize based on store type.
+    const ttl = this.normalizeTtl(ttlSeconds);
+    const staleTtl = this.normalizeTtl(staleTtlSeconds);
+
+    try {
+      if (staleTtl > 0) {
+        const entry: CacheEntry<T> = {
+          value,
+          staleUntil: Date.now() + ttlSeconds * 1000,
+          __cacheEntry: true,
+        };
+        await this.cacheManager.set(key, entry, ttl + staleTtl);
+        if (this.cacheDebug) {
+          this.logger.debug(
+            JSON.stringify({
+              message: 'Cache set',
+              key,
+              ttlSeconds,
+              staleTtlSeconds,
+              ttlUnit: this.getTtlUnit(),
+              mode: 'swr',
+            }),
+          );
+        }
+        return true;
+      }
+
+      await this.cacheManager.set(key, value, ttl);
+      if (this.cacheDebug) {
+        this.logger.debug(
+          JSON.stringify({
+            message: 'Cache set',
+            key,
+            ttlSeconds,
+            staleTtlSeconds,
+            ttlUnit: this.getTtlUnit(),
+            mode: 'ttl',
+          }),
+        );
+      }
+      return true;
+    } catch (error) {
+      this.logger.warn(`Cache set failed for ${key}`);
+      return false;
+    }
+  }
+
+  private isCacheAvailable(): boolean {
+    const store = (this.cacheManager as { store?: CacheStore }).store;
+    if (!store) {
+      return false;
+    }
+    if (store.isFallback) {
+      return false;
+    }
+    return true;
+  }
+
+  private normalizeTtl(valueSeconds: number): number {
+    // Redis uses PX (ms); in-memory cache-manager uses seconds.
+    if (this.getTtlUnit() === 'ms') {
+      return valueSeconds * 1000;
+    }
+    return valueSeconds;
+  }
+
+  private getTtlUnit(): 's' | 'ms' {
+    const store = (this.cacheManager as { store?: CacheStore }).store;
+    if (store?.name === 'redis') {
+      return 'ms';
+    }
+    return 's';
+  }
+
+  private parseBoolean(value: unknown): boolean {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+    if (typeof value !== 'string') {
+      return false;
+    }
+    const normalized = value.trim().toLowerCase();
+    return ['true', '1', 'yes', 'y', 'on'].includes(normalized);
   }
 }

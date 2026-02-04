@@ -12,7 +12,7 @@ describe('CacheService', () => {
     get: jest.Mock;
     set: jest.Mock;
     del: jest.Mock;
-    store: { client: { ping: jest.Mock } };
+    store: { client: { ping: jest.Mock }; isFallback?: boolean };
   };
 
   beforeEach(async () => {
@@ -43,6 +43,7 @@ describe('CacheService', () => {
         client: {
           ping: jest.fn().mockResolvedValue('PONG'),
         },
+        isFallback: false,
       },
     };
 
@@ -114,6 +115,26 @@ describe('CacheService', () => {
     await expect(service.wrap('stale-key', loader)).resolves.toEqual('stale');
     await new Promise((resolve) => setImmediate(resolve));
     expect(loader).toHaveBeenCalledTimes(1);
+  });
+
+  it('wrapCacheable returns miss and stores values', async () => {
+    const loader = jest.fn().mockResolvedValue({ value: 'fresh' });
+
+    await expect(service.wrapCacheable('cacheable-key', loader)).resolves.toEqual({
+      value: 'fresh',
+      status: 'MISS',
+    });
+    expect(cacheStore.get('cacheable-key')).toBeDefined();
+  });
+
+  it('wrapCacheable bypasses when cacheable is false', async () => {
+    const loader = jest.fn().mockResolvedValue({ value: 'fresh', cacheable: false });
+
+    await expect(service.wrapCacheable('bypass-key', loader)).resolves.toEqual({
+      value: 'fresh',
+      status: 'BYPASS',
+    });
+    expect(cacheStore.has('bypass-key')).toBe(false);
   });
 
   it('reports cache health', async () => {

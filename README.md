@@ -38,6 +38,9 @@ cp .env.example .env
 
 - `HTTP_CLIENT_API_KEY`: API key sent as `api_key` header to the upstream API when the client does not provide one
 - `PROXY_BODY_LIMIT`: Max JSON body size in bytes (default: 1048576)
+- `CACHE_IGNORE_UPSTREAM_CONTROL`: Ignore upstream `cache-control` directives and use local TTLs (default: false)
+- `CACHE_BYPASS_PATHS`: Comma-separated list of path prefixes that should never be cached (default: empty)
+- `CACHE_DEBUG`: Enable cache debug logging (default: false)
 
 ## Health Check
 
@@ -76,6 +79,22 @@ Notes:
 - The proxy currently has no authentication or rate limiting. Add those before exposing it publicly.
 - The proxy injects the upstream `api_key` only when the client does not already provide one, so protect `/api/v1` behind auth/rate limiting or keep it on an internal network.
 - The proxy forwards only allowlisted headers (`accept`, `accept-encoding`, `accept-language`, `authorization`, `content-type`, `user-agent`, `api_key`, and `x-*`).
+
+### Proxy Caching
+
+GET responses are cached in Redis using cache-aside with stale-while-revalidate. The proxy honors upstream
+`cache-control` headers when deciding whether to cache and for how long.
+
+Caching rules:
+
+- Only GET responses with 2xx status are cached (204/304 are skipped).
+- Upstream `cache-control: no-store` or `private` responses are not cached.
+- `s-maxage` or `max-age` determines the TTL when present; otherwise defaults to `CACHE_TTL_DEFAULT`.
+- Requests with an `authorization` header bypass caching.
+- `CACHE_IGNORE_UPSTREAM_CONTROL=true` ignores upstream cache directives and always uses local TTLs.
+- `CACHE_BYPASS_PATHS` entries (e.g. `/health`) are never cached.
+
+Responses include an `x-cache` header with `HIT`, `MISS`, `STALE`, or `BYPASS` to aid debugging.
 
 ## Cache Usage Example
 
