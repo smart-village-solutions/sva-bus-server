@@ -2,6 +2,7 @@ import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Cache } from 'cache-manager';
+import { createHash } from 'crypto';
 
 export type CacheStatus = 'HIT' | 'MISS' | 'STALE' | 'BYPASS';
 
@@ -57,7 +58,7 @@ export class CacheService {
       }
       return this.isCacheEntry(entry) ? entry.value : entry;
     } catch (error) {
-      this.logger.warn(`Cache get failed for ${key}`);
+      this.logger.warn(`Cache get failed for key hash: ${this.hashKeyForLogging(key)}`);
       return null;
     }
   }
@@ -74,7 +75,7 @@ export class CacheService {
     try {
       await this.cacheManager.del(key);
     } catch (error) {
-      this.logger.warn(`Cache delete failed for ${key}`);
+      this.logger.warn(`Cache delete failed for key hash: ${this.hashKeyForLogging(key)}`);
     }
   }
 
@@ -89,7 +90,9 @@ export class CacheService {
 
     if (cachedEntry) {
       if (cachedEntry.staleUntil && Date.now() > cachedEntry.staleUntil) {
-        this.logger.warn(`Cache entry for ${key} is stale; refreshing in background.`);
+        this.logger.warn(
+          `Cache entry for key hash ${this.hashKeyForLogging(key)} is stale; refreshing in background.`,
+        );
         void this.refreshInBackground(key, loader, ttl, staleTtl);
       }
       return cachedEntry.value;
@@ -152,7 +155,7 @@ export class CacheService {
       }
       return this.isCacheEntry(entry) ? entry : { value: entry, __cacheEntry: true };
     } catch (error) {
-      this.logger.warn(`Cache get failed for ${key}`);
+      this.logger.warn(`Cache get failed for key hash: ${this.hashKeyForLogging(key)}`);
       return null;
     }
   }
@@ -182,7 +185,7 @@ export class CacheService {
       const value = await loader();
       await this.set(key, value, { ttl, staleTtl });
     } catch (error) {
-      this.logger.warn(`Cache refresh failed for ${key}`);
+      this.logger.warn(`Cache refresh failed for key hash: ${this.hashKeyForLogging(key)}`);
     }
   }
 
@@ -200,7 +203,7 @@ export class CacheService {
       const staleTtl = result.staleTtl ?? options?.staleTtl ?? this.defaultStaleTtlSeconds;
       await this.setWithResult(key, result.value, { ttl, staleTtl });
     } catch (error) {
-      this.logger.warn(`Cache refresh failed for ${key}`);
+      this.logger.warn(`Cache refresh failed for key hash: ${this.hashKeyForLogging(key)}`);
     }
   }
 
@@ -236,7 +239,7 @@ export class CacheService {
           this.logger.debug(
             JSON.stringify({
               message: 'Cache set',
-              key,
+              keyHash: this.hashKeyForLogging(key),
               ttlSeconds,
               staleTtlSeconds,
               ttlUnit: this.getTtlUnit(),
@@ -252,7 +255,7 @@ export class CacheService {
         this.logger.debug(
           JSON.stringify({
             message: 'Cache set',
-            key,
+            keyHash: this.hashKeyForLogging(key),
             ttlSeconds,
             staleTtlSeconds,
             ttlUnit: this.getTtlUnit(),
@@ -262,7 +265,7 @@ export class CacheService {
       }
       return true;
     } catch (error) {
-      this.logger.warn(`Cache set failed for ${key}`);
+      this.logger.warn(`Cache set failed for key hash: ${this.hashKeyForLogging(key)}`);
       return false;
     }
   }
@@ -303,5 +306,14 @@ export class CacheService {
     }
     const normalized = value.trim().toLowerCase();
     return ['true', '1', 'yes', 'y', 'on'].includes(normalized);
+  }
+
+  /**
+   * Creates a safe fingerprint of a cache key for logging purposes.
+   * This prevents sensitive data (e.g., API keys) from being exposed in logs.
+   * Returns the first 16 characters of a SHA-256 hash of the key.
+   */
+  private hashKeyForLogging(key: string): string {
+    return createHash('sha256').update(key).digest('hex').substring(0, 16);
   }
 }
