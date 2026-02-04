@@ -1,15 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import type { HttpClientRawResponse, HttpRequestOptions } from '../http-client/http-client.service';
-import { HttpClientService } from '../http-client/http-client.service';
 import type { CacheStatus } from '../cache/cache.service';
 import { CacheService } from '../cache/cache.service';
-import {
-  buildProxyCacheKey,
-  deriveProxyCachePolicy,
-  shouldBypassProxyCache,
-} from './proxy-cache';
+import type { HttpClientRawResponse, HttpRequestOptions } from '../http-client/http-client.service';
+import { HttpClientService } from '../http-client/http-client.service';
+import { buildProxyCacheKey, deriveProxyCachePolicy, shouldBypassProxyCache } from './proxy-cache';
 
 @Injectable()
 export class ProxyService {
@@ -53,7 +49,9 @@ export class ProxyService {
             headers: {
               accept: options?.headers?.accept,
               'accept-language': options?.headers?.['accept-language'],
-              api_key: options?.headers?.api_key,
+              api_key: options?.headers?.api_key
+                ? `${options.headers.api_key.substring(0, 4)}***`
+                : undefined,
               authorization: Boolean(options?.headers?.authorization),
             },
             bypassPaths: this.bypassPaths,
@@ -77,7 +75,9 @@ export class ProxyService {
           headers: {
             accept: options?.headers?.accept,
             'accept-language': options?.headers?.['accept-language'],
-            api_key: options?.headers?.api_key,
+            api_key: options?.headers?.api_key
+              ? `${options.headers.api_key.substring(0, 4)}***`
+              : undefined,
             authorization: Boolean(options?.headers?.authorization),
           },
           ignoreUpstreamControl: this.ignoreUpstreamControl,
