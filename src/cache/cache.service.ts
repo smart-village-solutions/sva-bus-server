@@ -3,6 +3,9 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Cache } from 'cache-manager';
 
+import { hashKeyForLogging } from '../utils/hash';
+import { parseBoolean } from '../utils/parse-boolean';
+
 // Cache status meanings:
 // - HIT: response served from cache
 // - MISS: response fetched from upstream and cached
@@ -52,7 +55,7 @@ export class CacheService {
   ) {
     this.defaultTtlSeconds = Number(this.configService.get('CACHE_TTL_DEFAULT') ?? 300);
     this.defaultStaleTtlSeconds = Number(this.configService.get('CACHE_STALE_TTL') ?? 60);
-    this.cacheDebug = this.parseBoolean(this.configService.get('CACHE_DEBUG'));
+    this.cacheDebug = parseBoolean(this.configService.get('CACHE_DEBUG'));
   }
 
   async get<T>(key: string): Promise<T | null> {
@@ -63,7 +66,7 @@ export class CacheService {
       }
       return this.isCacheEntry(entry) ? entry.value : entry;
     } catch (error) {
-      this.logger.warn(`Cache get failed for ${key}`);
+      this.logger.warn(`Cache get failed for key hash: ${hashKeyForLogging(key)}`);
       return null;
     }
   }
@@ -80,7 +83,7 @@ export class CacheService {
     try {
       await this.cacheManager.del(key);
     } catch (error) {
-      this.logger.warn(`Cache delete failed for ${key}`);
+      this.logger.warn(`Cache delete failed for key hash: ${hashKeyForLogging(key)}`);
     }
   }
 
@@ -95,7 +98,9 @@ export class CacheService {
 
     if (cachedEntry) {
       if (cachedEntry.staleUntil && Date.now() > cachedEntry.staleUntil) {
-        this.logger.warn(`Cache entry for ${key} is stale; refreshing in background.`);
+        this.logger.warn(
+          `Cache entry for key hash ${hashKeyForLogging(key)} is stale; refreshing in background.`,
+        );
         void this.refreshInBackground(key, loader, ttl, staleTtl);
       }
       return cachedEntry.value;
@@ -158,7 +163,7 @@ export class CacheService {
       }
       return this.isCacheEntry(entry) ? entry : { value: entry, __cacheEntry: true };
     } catch (error) {
-      this.logger.warn(`Cache get failed for ${key}`);
+      this.logger.warn(`Cache get failed for key hash: ${hashKeyForLogging(key)}`);
       return null;
     }
   }
@@ -188,7 +193,7 @@ export class CacheService {
       const value = await loader();
       await this.set(key, value, { ttl, staleTtl });
     } catch (error) {
-      this.logger.warn(`Cache refresh failed for ${key}`);
+      this.logger.warn(`Cache refresh failed for key hash: ${hashKeyForLogging(key)}`);
     }
   }
 
@@ -206,7 +211,7 @@ export class CacheService {
       const staleTtl = result.staleTtl ?? options?.staleTtl ?? this.defaultStaleTtlSeconds;
       await this.setWithResult(key, result.value, { ttl, staleTtl });
     } catch (error) {
-      this.logger.warn(`Cache refresh failed for ${key}`);
+      this.logger.warn(`Cache refresh failed for key hash: ${hashKeyForLogging(key)}`);
     }
   }
 
@@ -242,7 +247,7 @@ export class CacheService {
           this.logger.debug(
             JSON.stringify({
               message: 'Cache set',
-              key,
+              keyHash: hashKeyForLogging(key),
               ttlSeconds,
               staleTtlSeconds,
               ttlUnit: this.getTtlUnit(),
@@ -258,7 +263,7 @@ export class CacheService {
         this.logger.debug(
           JSON.stringify({
             message: 'Cache set',
-            key,
+            keyHash: hashKeyForLogging(key),
             ttlSeconds,
             staleTtlSeconds,
             ttlUnit: this.getTtlUnit(),
@@ -268,7 +273,7 @@ export class CacheService {
       }
       return true;
     } catch (error) {
-      this.logger.warn(`Cache set failed for ${key}`);
+      this.logger.warn(`Cache set failed for key hash: ${hashKeyForLogging(key)}`);
       return false;
     }
   }
@@ -300,14 +305,4 @@ export class CacheService {
     return 's';
   }
 
-  private parseBoolean(value: unknown): boolean {
-    if (typeof value === 'boolean') {
-      return value;
-    }
-    if (typeof value !== 'string') {
-      return false;
-    }
-    const normalized = value.trim().toLowerCase();
-    return ['true', '1', 'yes', 'y', 'on'].includes(normalized);
-  }
 }

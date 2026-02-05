@@ -1,15 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
-import type { HttpClientRawResponse, HttpRequestOptions } from '../http-client/http-client.service';
-import { HttpClientService } from '../http-client/http-client.service';
 import type { CacheStatus } from '../cache/cache.service';
 import { CacheService } from '../cache/cache.service';
-import {
-  buildProxyCacheKey,
-  deriveProxyCachePolicy,
-  shouldBypassProxyCache,
-} from './proxy-cache';
+import type { HttpClientRawResponse, HttpRequestOptions } from '../http-client/http-client.service';
+import { HttpClientService } from '../http-client/http-client.service';
+import { hashKeyForLogging } from '../utils/hash';
+import { parseBoolean } from '../utils/parse-boolean';
+import { buildProxyCacheKey, deriveProxyCachePolicy, shouldBypassProxyCache } from './proxy-cache';
 
 @Injectable()
 export class ProxyService {
@@ -23,11 +21,11 @@ export class ProxyService {
     private readonly cacheService: CacheService,
     private readonly configService: ConfigService,
   ) {
-    this.ignoreUpstreamControl = this.parseBoolean(
+    this.ignoreUpstreamControl = parseBoolean(
       this.configService.get('CACHE_IGNORE_UPSTREAM_CONTROL'),
     );
     this.bypassPaths = this.parseBypassPaths(this.configService.get('CACHE_BYPASS_PATHS'));
-    this.cacheDebug = this.parseBoolean(this.configService.get('CACHE_DEBUG'));
+    this.cacheDebug = parseBoolean(this.configService.get('CACHE_DEBUG'));
   }
 
   async forward<T>(
@@ -53,7 +51,6 @@ export class ProxyService {
             headers: {
               accept: options?.headers?.accept,
               'accept-language': options?.headers?.['accept-language'],
-              api_key: options?.headers?.api_key,
               authorization: Boolean(options?.headers?.authorization),
             },
             bypassPaths: this.bypassPaths,
@@ -66,6 +63,7 @@ export class ProxyService {
 
     // Cache key is based on path/query and selected headers to avoid variant mixing.
     const cacheKey = buildProxyCacheKey(method, path, options?.headers);
+    const cacheKeyHash = hashKeyForLogging(cacheKey);
     if (this.cacheDebug) {
       this.logger.debug(
         JSON.stringify({
@@ -73,11 +71,10 @@ export class ProxyService {
           method,
           path,
           basePath,
-          cacheKey,
+          cacheKeyHash,
           headers: {
             accept: options?.headers?.accept,
             'accept-language': options?.headers?.['accept-language'],
-            api_key: options?.headers?.api_key,
             authorization: Boolean(options?.headers?.authorization),
           },
           ignoreUpstreamControl: this.ignoreUpstreamControl,
@@ -107,7 +104,7 @@ export class ProxyService {
           message: 'Proxy cache result',
           method,
           path,
-          cacheKey,
+          cacheKeyHash,
           status: cached.status,
         }),
       );
@@ -130,14 +127,4 @@ export class ProxyService {
       .filter((entry) => entry.length > 0);
   }
 
-  private parseBoolean(value: unknown): boolean {
-    if (typeof value === 'boolean') {
-      return value;
-    }
-    if (typeof value !== 'string') {
-      return false;
-    }
-    const normalized = value.trim().toLowerCase();
-    return ['true', '1', 'yes', 'y', 'on'].includes(normalized);
-  }
 }

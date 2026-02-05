@@ -31,7 +31,7 @@ cp .env.example .env
 - `HTTP_CLIENT_TIMEOUT`: Request timeout in milliseconds
 - `HTTP_CLIENT_RETRIES`: Retry attempts for upstream calls
 - `CACHE_REDIS_URL`: Redis connection string
-- `CACHE_TTL_DEFAULT`: Default cache TTL (seconds)
+- `CACHE_TTL_DEFAULT`: Default cache TTL (seconds; converted to ms for Redis stores)
 - `CACHE_STALE_TTL`: Stale-while-revalidate window (seconds)
 
 ### Optional settings

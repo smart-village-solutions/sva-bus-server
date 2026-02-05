@@ -1,4 +1,4 @@
-import { deriveProxyCachePolicy, shouldBypassProxyCache } from './proxy-cache';
+import { buildProxyCacheKey, deriveProxyCachePolicy, shouldBypassProxyCache } from './proxy-cache';
 
 describe('proxy cache policy', () => {
   it('bypasses cache for non-2xx responses', () => {
@@ -65,5 +65,71 @@ describe('proxy cache policy', () => {
     );
 
     expect(policy.cacheable).toBe(true);
+  });
+});
+
+describe('buildProxyCacheKey', () => {
+  it('generates consistent cache keys for same inputs', () => {
+    const key1 = buildProxyCacheKey('GET', '/api/test', {
+      accept: 'application/json',
+      'accept-language': 'de-DE',
+      api_key: 'secret123',
+    });
+    const key2 = buildProxyCacheKey('GET', '/api/test', {
+      accept: 'application/json',
+      'accept-language': 'de-DE',
+      api_key: 'secret123',
+    });
+
+    expect(key1).toBe(key2);
+  });
+
+  it('generates different cache keys for different api_key values', () => {
+    const key1 = buildProxyCacheKey('GET', '/api/test', { api_key: 'secret123' });
+    const key2 = buildProxyCacheKey('GET', '/api/test', { api_key: 'secret456' });
+
+    expect(key1).not.toBe(key2);
+  });
+
+  it('treats api_key case-sensitively (different cases produce different keys)', () => {
+    const key1 = buildProxyCacheKey('GET', '/api/test', { api_key: 'Secret123' });
+    const key2 = buildProxyCacheKey('GET', '/api/test', { api_key: 'secret123' });
+
+    expect(key1).not.toBe(key2);
+  });
+
+  it('handles missing api_key gracefully', () => {
+    const key1 = buildProxyCacheKey('GET', '/api/test', {});
+    const key2 = buildProxyCacheKey('GET', '/api/test', { api_key: '' });
+
+    expect(key1).toBe(key2);
+  });
+
+  it('normalizes accept and accept-language headers', () => {
+    const key1 = buildProxyCacheKey('GET', '/api/test', {
+      accept: 'Application/JSON',
+      'accept-language': 'DE-de',
+    });
+    const key2 = buildProxyCacheKey('GET', '/api/test', {
+      accept: 'application/json',
+      'accept-language': 'de-de',
+    });
+
+    expect(key1).toBe(key2);
+  });
+
+  it('does not expose api_key in plaintext in cache key', () => {
+    const apiKey = 'my-secret-key';
+    const cacheKey = buildProxyCacheKey('GET', '/api/test', { api_key: apiKey });
+
+    expect(cacheKey).not.toContain(apiKey);
+    expect(cacheKey).not.toContain(apiKey.toLowerCase());
+  });
+
+  it('treats api_key with whitespace consistently', () => {
+    const key1 = buildProxyCacheKey('GET', '/api/test', { api_key: 'secret123' });
+    const key2 = buildProxyCacheKey('GET', '/api/test', { api_key: '  secret123  ' });
+
+    expect(key1).toBe(key2);
   });
 });
