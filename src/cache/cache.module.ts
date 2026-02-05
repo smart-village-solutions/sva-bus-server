@@ -12,21 +12,33 @@ import { CacheService } from './cache.service';
       inject: [ConfigService],
       useFactory: async (configService: ConfigService) => {
         const logger = new Logger(CacheModule.name);
-        const ttl = Number(configService.get('CACHE_TTL_DEFAULT') ?? 300);
+        const ttlSeconds = Number(configService.get('CACHE_TTL_DEFAULT') ?? 300);
         const redisUrl = configService.get<string>('CACHE_REDIS_URL') ?? '';
 
-        const noopStore: CacheStore = {
+        const noopStore: CacheStore & { isFallback: boolean; isRedis?: boolean; name?: string } = {
           get: async <T>() => undefined as T | undefined,
           set: async () => undefined,
           del: async () => undefined,
+          isFallback: true,
+          isRedis: false,
+          name: 'noop',
         };
 
         try {
-          const store = await redisStore({ url: redisUrl });
-          return { ttl, store };
+          const store = (await redisStore({ url: redisUrl })) as CacheStore & {
+            isFallback?: boolean;
+            isRedis?: boolean;
+            name?: string;
+          };
+          store.isFallback = false;
+          store.isRedis = true;
+          store.name ??= 'redis';
+          // cache-manager v5 expects TTL in milliseconds; config is in seconds.
+          return { ttl: ttlSeconds * 1000, store };
         } catch (error) {
           logger.warn('Redis cache unavailable; using no-op cache store.');
-          return { ttl, store: noopStore };
+          // In-memory cache-manager uses seconds, so keep TTL as-is for the noop store.
+          return { ttl: ttlSeconds, store: noopStore };
         }
       },
     }),
