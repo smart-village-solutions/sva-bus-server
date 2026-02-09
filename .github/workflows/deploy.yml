@@ -68,8 +68,8 @@ jobs:
           push: true
           tags: ${{ steps.image.outputs.image_ref }}
 
-  render-quantum-config:
-    name: Render Quantum Config
+  deploy:
+    name: Deploy to Quantum
     needs: preflight
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -128,42 +128,6 @@ jobs:
           CACHE_DEBUG="${CACHE_DEBUG:-false}" \
           docker compose -f docker-compose.quantum.yml -f stack.quantum.yml config > quantum.yml
 
-      - name: Upload rendered quantum config
-        uses: actions/upload-artifact@v4
-        with:
-          name: quantum-config-${{ github.sha }}
-          path: quantum.yml
-          retention-days: 2
-
-  deploy:
-    name: Deploy to Quantum
-    needs:
-      - preflight
-      - render-quantum-config
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment:
-      name: production
-    container:
-      image: r.planetary-quantum.com/quantum-public/cli:2
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download rendered quantum config
-        uses: actions/download-artifact@v4
-        with:
-          name: quantum-config-${{ github.sha }}
-
-      - name: Write .quantum file
-        run: |
-          cat > .quantum << 'QEOF'
-          ---
-          version: '1.0'
-          compose: quantum.yml
-          QEOF
-
       - name: Deploy stack via Quantum CLI
         env:
           QUANTUM_USER: ${{ secrets.QUANTUM_USER }}
@@ -177,12 +141,30 @@ jobs:
             exit 1
           fi
 
-          if [ -n "$QUANTUM_HOST" ]; then
-            export HOST="$QUANTUM_HOST"
-          fi
+          quantum_cmd='quantum-cli stacks update --create --wait --stack "$QUANTUM_STACK" || quantum-cli stack update --create --wait --stack "$QUANTUM_STACK"'
 
-          quantum-cli stacks update --create --wait --stack "$QUANTUM_STACK" || \
-            quantum-cli stack update --create --wait --stack "$QUANTUM_STACK"
+          if [ -n "$QUANTUM_HOST" ]; then
+            docker run --rm \
+              -e QUANTUM_USER="$QUANTUM_USER" \
+              -e QUANTUM_PASSWORD="$QUANTUM_PASSWORD" \
+              -e QUANTUM_ENDPOINT="$QUANTUM_ENDPOINT" \
+              -e QUANTUM_STACK="$QUANTUM_STACK" \
+              -e HOST="$QUANTUM_HOST" \
+              -v "$PWD:/workspace" \
+              -w /workspace \
+              r.planetary-quantum.com/quantum-public/cli:2 \
+              sh -lc "$quantum_cmd"
+          else
+            docker run --rm \
+              -e QUANTUM_USER="$QUANTUM_USER" \
+              -e QUANTUM_PASSWORD="$QUANTUM_PASSWORD" \
+              -e QUANTUM_ENDPOINT="$QUANTUM_ENDPOINT" \
+              -e QUANTUM_STACK="$QUANTUM_STACK" \
+              -v "$PWD:/workspace" \
+              -w /workspace \
+              r.planetary-quantum.com/quantum-public/cli:2 \
+              sh -lc "$quantum_cmd"
+          fi
 
       - name: Verify health endpoint
         env:
