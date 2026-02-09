@@ -1,6 +1,6 @@
 {
   "name": "BUS Server (TSA Infodienste API Proxy)",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "description": "NestJS + Fastify API proxy für die TSA Infodienste API",
   "license": "EUPL-1.2",

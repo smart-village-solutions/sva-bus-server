@@ -12,7 +12,7 @@ describe('CacheService', () => {
     get: jest.Mock;
     set: jest.Mock;
     del: jest.Mock;
-    store: { client: { ping: jest.Mock } };
+    store: { client: { ping: jest.Mock }; isFallback?: boolean; name?: string };
   };
 
   beforeEach(async () => {
@@ -43,6 +43,7 @@ describe('CacheService', () => {
         client: {
           ping: jest.fn().mockResolvedValue('PONG'),
         },
+        isFallback: false,
       },
     };
 
@@ -106,6 +107,27 @@ describe('CacheService', () => {
     jest.useRealTimers();
   });
 
+  it('stores swr entries using ms ttl for redis store', async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2024-01-01T00:00:00Z'));
+    cacheManager.store.name = 'redis';
+
+    await service.set('swr-key', 'swr-value', { ttl: 5, staleTtl: 2 });
+
+    expect(cacheManager.set).toHaveBeenCalledTimes(1);
+    expect(cacheManager.set).toHaveBeenCalledWith(
+      'swr-key',
+      expect.objectContaining({
+        value: 'swr-value',
+        __cacheEntry: true,
+        staleUntil: new Date('2024-01-01T00:00:05.000Z').getTime(),
+      }),
+      7000,
+    );
+
+    jest.useRealTimers();
+  });
+
   it('returns stale value and refreshes in background', async () => {
     const loader = jest.fn().mockResolvedValue('updated');
     const staleEntry = { value: 'stale', staleUntil: Date.now() - 1000, __cacheEntry: true };
@@ -114,6 +136,26 @@ describe('CacheService', () => {
     await expect(service.wrap('stale-key', loader)).resolves.toEqual('stale');
     await new Promise((resolve) => setImmediate(resolve));
     expect(loader).toHaveBeenCalledTimes(1);
+  });
+
+  it('wrapCacheable returns miss and stores values', async () => {
+    const loader = jest.fn().mockResolvedValue({ value: 'fresh' });
+
+    await expect(service.wrapCacheable('cacheable-key', loader)).resolves.toEqual({
+      value: 'fresh',
+      status: 'MISS',
+    });
+    expect(cacheStore.get('cacheable-key')).toBeDefined();
+  });
+
+  it('wrapCacheable bypasses when cacheable is false', async () => {
+    const loader = jest.fn().mockResolvedValue({ value: 'fresh', cacheable: false });
+
+    await expect(service.wrapCacheable('bypass-key', loader)).resolves.toEqual({
+      value: 'fresh',
+      status: 'BYPASS',
+    });
+    expect(cacheStore.has('bypass-key')).toBe(false);
   });
 
   it('reports cache health', async () => {
