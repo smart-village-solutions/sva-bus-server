@@ -1,0 +1,204 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    name: Preflight and Build Image
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_ref: ${{ steps.image.outputs.image_ref }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run quality checks
+        run: |
+          npm run format:check
+          npm run lint
+          npm test
+          npm run build
+
+      - name: Compute image reference
+        id: image
+        run: |
+          image_repo="ghcr.io/${GITHUB_REPOSITORY}"
+          image_repo="$(echo "$image_repo" | tr '[:upper:]' '[:lower:]')"
+          echo "image_ref=${image_repo}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.image.outputs.image_ref }}
+
+  render-quantum-config:
+    name: Render Quantum Config
+    needs: preflight
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Render quantum.yml from compose templates
+        env:
+          IMAGE_REF: ${{ needs.preflight.outputs.image_ref }}
+          PUBLIC_DOMAIN: ${{ vars.PUBLIC_DOMAIN }}
+          QUANTUM_NODE: ${{ vars.QUANTUM_NODE }}
+          HTTP_CLIENT_BASE_URL: ${{ secrets.HTTP_CLIENT_BASE_URL }}
+          HTTP_CLIENT_API_KEY: ${{ secrets.HTTP_CLIENT_API_KEY }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+          HTTP_CLIENT_TIMEOUT: ${{ vars.HTTP_CLIENT_TIMEOUT }}
+          HTTP_CLIENT_RETRIES: ${{ vars.HTTP_CLIENT_RETRIES }}
+          PROXY_BODY_LIMIT: ${{ vars.PROXY_BODY_LIMIT }}
+          CACHE_TTL_DEFAULT: ${{ vars.CACHE_TTL_DEFAULT }}
+          CACHE_STALE_TTL: ${{ vars.CACHE_STALE_TTL }}
+          CACHE_IGNORE_UPSTREAM_CONTROL: ${{ vars.CACHE_IGNORE_UPSTREAM_CONTROL }}
+          CACHE_BYPASS_PATHS: ${{ vars.CACHE_BYPASS_PATHS }}
+          CACHE_DEBUG: ${{ vars.CACHE_DEBUG }}
+        run: |
+          if [ -z "$PUBLIC_DOMAIN" ]; then
+            echo "PUBLIC_DOMAIN is required"
+            exit 1
+          fi
+
+          if [ -z "$QUANTUM_NODE" ]; then
+            echo "QUANTUM_NODE is required"
+            exit 1
+          fi
+
+          if [ -z "$HTTP_CLIENT_BASE_URL" ]; then
+            echo "HTTP_CLIENT_BASE_URL is required"
+            exit 1
+          fi
+
+          IMAGE_REF="$IMAGE_REF" \
+          PUBLIC_DOMAIN="$PUBLIC_DOMAIN" \
+          QUANTUM_NODE="$QUANTUM_NODE" \
+          HTTP_CLIENT_BASE_URL="$HTTP_CLIENT_BASE_URL" \
+          HTTP_CLIENT_API_KEY="$HTTP_CLIENT_API_KEY" \
+          LOG_LEVEL="${LOG_LEVEL:-info}" \
+          HTTP_CLIENT_TIMEOUT="${HTTP_CLIENT_TIMEOUT:-10000}" \
+          HTTP_CLIENT_RETRIES="${HTTP_CLIENT_RETRIES:-2}" \
+          PROXY_BODY_LIMIT="${PROXY_BODY_LIMIT:-1048576}" \
+          CACHE_TTL_DEFAULT="${CACHE_TTL_DEFAULT:-300}" \
+          CACHE_STALE_TTL="${CACHE_STALE_TTL:-60}" \
+          CACHE_IGNORE_UPSTREAM_CONTROL="${CACHE_IGNORE_UPSTREAM_CONTROL:-false}" \
+          CACHE_BYPASS_PATHS="${CACHE_BYPASS_PATHS:-/health}" \
+          CACHE_DEBUG="${CACHE_DEBUG:-false}" \
+          docker compose -f docker-compose.quantum.yml -f stack.quantum.yml config > quantum.yml
+
+      - name: Upload rendered quantum config
+        uses: actions/upload-artifact@v4
+        with:
+          name: quantum-config-${{ github.sha }}
+          path: quantum.yml
+          retention-days: 2
+
+  deploy:
+    name: Deploy to Quantum
+    needs:
+      - preflight
+      - render-quantum-config
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+    container:
+      image: r.planetary-quantum.com/quantum-public/cli:2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download rendered quantum config
+        uses: actions/download-artifact@v4
+        with:
+          name: quantum-config-${{ github.sha }}
+
+      - name: Write .quantum file
+        run: |
+          cat > .quantum << 'QEOF'
+          ---
+          version: '1.0'
+          compose: quantum.yml
+          QEOF
+
+      - name: Deploy stack via Quantum CLI
+        env:
+          QUANTUM_USER: ${{ secrets.QUANTUM_USER }}
+          QUANTUM_PASSWORD: ${{ secrets.QUANTUM_PASSWORD }}
+          QUANTUM_ENDPOINT: ${{ vars.QUANTUM_ENDPOINT }}
+          QUANTUM_STACK: ${{ vars.QUANTUM_STACK }}
+          QUANTUM_HOST: ${{ vars.QUANTUM_HOST }}
+        run: |
+          if [ -z "$QUANTUM_USER" ] || [ -z "$QUANTUM_PASSWORD" ] || [ -z "$QUANTUM_ENDPOINT" ] || [ -z "$QUANTUM_STACK" ]; then
+            echo "QUANTUM_USER, QUANTUM_PASSWORD, QUANTUM_ENDPOINT, and QUANTUM_STACK are required"
+            exit 1
+          fi
+
+          if [ -n "$QUANTUM_HOST" ]; then
+            export HOST="$QUANTUM_HOST"
+          fi
+
+          quantum-cli stacks update --create --wait --stack "$QUANTUM_STACK" || \
+            quantum-cli stack update --create --wait --stack "$QUANTUM_STACK"
+
+      - name: Verify health endpoint
+        env:
+          HEALTHCHECK_URL: ${{ vars.HEALTHCHECK_URL }}
+        run: |
+          if [ -z "$HEALTHCHECK_URL" ]; then
+            echo "HEALTHCHECK_URL is required as production environment variable"
+            exit 1
+          fi
+
+          for _ in 1 2 3 4 5; do
+            if curl --fail --silent --show-error --max-time 10 "$HEALTHCHECK_URL"; then
+              exit 0
+            fi
+            sleep 5
+          done
+
+          echo "Health check failed after retries"
+          exit 1

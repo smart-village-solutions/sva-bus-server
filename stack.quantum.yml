@@ -1,0 +1,23 @@
+services:
+  bus-api:
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.hostname == ${QUANTUM_NODE}
+      restart_policy:
+        condition: on-failure
+      labels:
+        traefik.enable: 'true'
+        traefik.port: '3000'
+        traefik.docker.network: public
+        traefik.frontend.rule: Host:${PUBLIC_DOMAIN}
+
+  redis:
+    deploy:
+      replicas: 1
+      placement:
+        constraints:
+          - node.hostname == ${QUANTUM_NODE}
+      restart_policy:
+        condition: on-failure
