@@ -126,5 +126,4 @@ export class ProxyService {
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0);
   }
-
 }

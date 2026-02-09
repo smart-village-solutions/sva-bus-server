@@ -1,12 +1,12 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-
 import type { Cache } from 'cache-manager';
+
 import { CacheService } from '../cache/cache.service';
 import { HttpClientService } from '../http-client/http-client.service';
-import { buildProxyCacheKey } from './proxy-cache';
 import { ProxyService } from './proxy.service';
+import { buildProxyCacheKey } from './proxy-cache';
 
 describe('ProxyService', () => {
   let service: ProxyService;
@@ -16,7 +16,7 @@ describe('ProxyService', () => {
 
   beforeEach(async () => {
     cacheStore = new Map();
-    cacheManager = ({
+    cacheManager = {
       get: jest.fn(async (key: string) => cacheStore.get(key)),
       set: jest.fn(async (key: string, value: unknown) => {
         cacheStore.set(key, value);
@@ -34,7 +34,7 @@ describe('ProxyService', () => {
         },
         isFallback: false,
       },
-    } as unknown) as Cache;
+    } as unknown as Cache;
 
     httpClientService = {
       requestRaw: jest.fn().mockResolvedValue({
