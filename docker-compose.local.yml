@@ -1,0 +1,33 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bus-api:local
+    container_name: bus-api-local
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      CACHE_REDIS_URL: redis://redis:6379
+    ports:
+      - '3000:3000'
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    container_name: bus-api-redis-local
+    restart: unless-stopped
+    command: ['redis-server', '--save', '60', '1', '--appendonly', 'yes']
+    volumes:
+      - redis-data-local:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  redis-data-local:

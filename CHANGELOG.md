@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.5.0
+
+### Added
+
+- Docker containerization for the NestJS service with a multi-stage `Dockerfile`.
+- Local Docker compose setup (`app + redis`) via `docker-compose.local.yml`.
+- GitHub Actions CI workflow enhancements with Docker image build validation.
+- GitHub Actions production deployment workflow for immutable SHA-tagged image releases.
+- Quantum deployment templates (`docker-compose.quantum.yml`, `stack.quantum.yml`, `.quantum`) including Traefik host routing and node placement constraints.
+- Deployment runbook for GitHub + Quantum operations.
+
 ## 0.4.0
 
 ### Added

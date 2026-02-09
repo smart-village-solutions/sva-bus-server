@@ -369,10 +369,7 @@ export class HttpClientService implements OnModuleDestroy {
     };
   }
 
-  private async parseResponseBody(
-    response: UndiciResponse,
-    contentType: string,
-  ): Promise<unknown> {
+  private async parseResponseBody(response: UndiciResponse, contentType: string): Promise<unknown> {
     const text = await response.text();
 
     if (!text) {
