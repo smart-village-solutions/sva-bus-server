@@ -128,6 +128,15 @@ jobs:
           CACHE_DEBUG="${CACHE_DEBUG:-false}" \
           docker compose -f docker-compose.quantum.yml -f stack.quantum.yml config > quantum.yml
 
+          # Quantum rejects the Compose V2 root-level "name" field.
+          sed -i '/^name:/d' quantum.yml
+
+          # Keep a Compose version at root for Quantum parser compatibility.
+          if ! grep -q "^version:" quantum.yml; then
+            { printf "version: '3.8'\n"; cat quantum.yml; } > quantum.with-version.yml
+            mv quantum.with-version.yml quantum.yml
+          fi
+
       - name: Deploy stack via Quantum CLI
         env:
           QUANTUM_USER: ${{ secrets.QUANTUM_USER }}
