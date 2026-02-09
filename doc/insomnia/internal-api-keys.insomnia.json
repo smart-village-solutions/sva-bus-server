@@ -1,0 +1,102 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-02-10T12:00:00.000Z",
+  "__export_source": "codex.gpt-5",
+  "resources": [
+    {
+      "_id": "wrk_bb_bus_server_internal_api_keys",
+      "_type": "workspace",
+      "name": "bb-bus-server Internal API Keys",
+      "description": "Internal admin endpoints for API key lifecycle",
+      "scope": "collection"
+    },
+    {
+      "_id": "env_bb_bus_server_internal_api_keys",
+      "_type": "environment",
+      "parentId": "wrk_bb_bus_server_internal_api_keys",
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:3000",
+        "admin_bearer_token": "",
+        "key_id": ""
+      }
+    },
+    {
+      "_id": "fld_internal_api_keys",
+      "_type": "request_group",
+      "parentId": "wrk_bb_bus_server_internal_api_keys",
+      "name": "internal/api-keys"
+    },
+    {
+      "_id": "req_create_api_key",
+      "_type": "request",
+      "parentId": "fld_internal_api_keys",
+      "name": "Create API Key",
+      "method": "POST",
+      "url": "{{ _.base_url }}/internal/api-keys",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"owner\": \"mobile-app-prod\",\n  \"label\": \"iOS App\",\n  \"contact\": \"team-mobile@example.org\",\n  \"createdBy\": \"ops\",\n  \"expiresAt\": \"2027-01-01T00:00:00.000Z\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.admin_bearer_token }}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ]
+    },
+    {
+      "_id": "req_list_api_keys",
+      "_type": "request",
+      "parentId": "fld_internal_api_keys",
+      "name": "List API Keys",
+      "method": "GET",
+      "url": "{{ _.base_url }}/internal/api-keys",
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.admin_bearer_token }}"
+      }
+    },
+    {
+      "_id": "req_revoke_api_key",
+      "_type": "request",
+      "parentId": "fld_internal_api_keys",
+      "name": "Revoke API Key",
+      "method": "POST",
+      "url": "{{ _.base_url }}/internal/api-keys/{{ _.key_id }}/revoke",
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.admin_bearer_token }}"
+      }
+    },
+    {
+      "_id": "req_activate_api_key",
+      "_type": "request",
+      "parentId": "fld_internal_api_keys",
+      "name": "Activate API Key",
+      "method": "POST",
+      "url": "{{ _.base_url }}/internal/api-keys/{{ _.key_id }}/activate",
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.admin_bearer_token }}"
+      }
+    },
+    {
+      "_id": "req_delete_api_key",
+      "_type": "request",
+      "parentId": "fld_internal_api_keys",
+      "name": "Delete API Key",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/internal/api-keys/{{ _.key_id }}",
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.admin_bearer_token }}"
+      }
+    }
+  ]
+}

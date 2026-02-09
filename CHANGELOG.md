@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.6.0
+
+### Added
+
+- Redis-backed client API key registry with lifecycle management (`create/list/revoke/activate/delete`) via internal admin endpoints under `/internal/api-keys`.
+- Mandatory client API key protection for proxy routes (`/api/v1/**`) using `x-api-key`.
+- Redis-backed fixed-window rate limiting for proxy access, including response headers (`x-ratelimit-*`) and `retry-after` on limit exceed.
+- Structured admin audit logging for API key operations without leaking raw secrets.
+- New environment settings for API key/rate-limit control and admin access (`API_KEYS_REDIS_PREFIX`, `API_KEYS_RATE_LIMIT_WINDOW_SECONDS`, `API_KEYS_RATE_LIMIT_MAX_REQUESTS`, `ADMIN_API_TOKEN`).
+- Insomnia import config for internal API key endpoints (`doc/insomnia/internal-api-keys.insomnia.json`).
+
+### Changed
+
+- Proxy access control now uses a single composed guard to enforce deterministic auth + rate-limit flow.
+- Deployment workflow and Quantum compose runtime now inject `ADMIN_API_TOKEN` from secrets.
+
+### Removed
+
+- `ApiKeyAuthGuard` and `ApiKeyRateLimitGuard`, replaced by `ProxyAccessGuard`
+
 ## 0.5.0
 
 ### Added

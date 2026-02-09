@@ -42,4 +42,9 @@ export const envValidationSchema = Joi.object({
     .truthy('true', '1', 'yes', 'y', 'on')
     .falsy('false', '0', 'no', 'n', 'off')
     .default(false),
+  API_KEYS_REDIS_PREFIX: Joi.string().default('api-keys'),
+  API_KEYS_RATE_LIMIT_WINDOW_SECONDS: Joi.number().integer().positive().default(60),
+  API_KEYS_RATE_LIMIT_MAX_REQUESTS: Joi.number().integer().positive().default(120),
+  // Optional admin token for internal key-management API.
+  ADMIN_API_TOKEN: Joi.string().allow('').default(''),
 });

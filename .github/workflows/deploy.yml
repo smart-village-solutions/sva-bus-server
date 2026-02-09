@@ -87,6 +87,7 @@ jobs:
           QUANTUM_NODE: ${{ vars.QUANTUM_NODE }}
           HTTP_CLIENT_BASE_URL: ${{ secrets.HTTP_CLIENT_BASE_URL }}
           HTTP_CLIENT_API_KEY: ${{ secrets.HTTP_CLIENT_API_KEY }}
+          ADMIN_API_TOKEN: ${{ secrets.ADMIN_API_TOKEN }}
           LOG_LEVEL: ${{ vars.LOG_LEVEL }}
           HTTP_CLIENT_TIMEOUT: ${{ vars.HTTP_CLIENT_TIMEOUT }}
           HTTP_CLIENT_RETRIES: ${{ vars.HTTP_CLIENT_RETRIES }}
@@ -117,6 +118,7 @@ jobs:
           QUANTUM_NODE="$QUANTUM_NODE" \
           HTTP_CLIENT_BASE_URL="$HTTP_CLIENT_BASE_URL" \
           HTTP_CLIENT_API_KEY="$HTTP_CLIENT_API_KEY" \
+          ADMIN_API_TOKEN="$ADMIN_API_TOKEN" \
           LOG_LEVEL="${LOG_LEVEL:-info}" \
           HTTP_CLIENT_TIMEOUT="${HTTP_CLIENT_TIMEOUT:-10000}" \
           HTTP_CLIENT_RETRIES="${HTTP_CLIENT_RETRIES:-2}" \

@@ -26,6 +26,7 @@ This project uses GitHub Actions for CI/CD with protected production deployments
 - `QUANTUM_PASSWORD`: Quantum login password
 - `HTTP_CLIENT_BASE_URL`: required upstream API base URL (origin-only)
 - `HTTP_CLIENT_API_KEY`: optional upstream API key injected into app runtime
+- `ADMIN_API_TOKEN`: required bearer token for internal API key admin endpoints (`/internal/api-keys`)
 
 ## Production Environment Variables
 
@@ -44,6 +45,9 @@ This project uses GitHub Actions for CI/CD with protected production deployments
 - `CACHE_IGNORE_UPSTREAM_CONTROL`: optional, default `false`
 - `CACHE_BYPASS_PATHS`: optional, default `/health`
 - `CACHE_DEBUG`: optional, default `false`
+- `API_KEYS_REDIS_PREFIX`: optional, default `api-keys`
+- `API_KEYS_RATE_LIMIT_WINDOW_SECONDS`: optional, default `60`
+- `API_KEYS_RATE_LIMIT_MAX_REQUESTS`: optional, default `120`
 
 ## Redis Runtime
 
