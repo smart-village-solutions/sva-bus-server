@@ -33,7 +33,11 @@ export class ProxyService {
     path: string,
     body?: unknown,
     options?: HttpRequestOptions,
-  ): Promise<{ response: HttpClientRawResponse<T>; cacheStatus?: CacheStatus }> {
+  ): Promise<{
+    response: HttpClientRawResponse<T>;
+    cacheStatus?: CacheStatus;
+    cacheKeyHash?: string;
+  }> {
     if (method !== 'GET') {
       const response = await this.httpClientService.requestRaw<T>(method, path, body, options);
       return { response };
@@ -110,7 +114,11 @@ export class ProxyService {
       );
     }
 
-    return { response: cached.value, cacheStatus: cached.status };
+    return {
+      response: cached.value,
+      cacheStatus: cached.status,
+      cacheKeyHash: this.cacheDebug ? cacheKeyHash : undefined,
+    };
   }
 
   private stripQuery(path: string): string {

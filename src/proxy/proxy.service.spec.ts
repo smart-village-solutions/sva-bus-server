@@ -68,6 +68,8 @@ describe('ProxyService', () => {
                   return 'false';
                 case 'CACHE_BYPASS_PATHS':
                   return '/bypass';
+                case 'CACHE_DEBUG':
+                  return 'true';
                 default:
                   return undefined;
               }
@@ -91,12 +93,14 @@ describe('ProxyService', () => {
 
     expect(first.response.body).toEqual({ ok: true });
     expect(first.cacheStatus).toBe('MISS');
+    expect(first.cacheKeyHash).toHaveLength(32);
 
     const second = await service.forward('GET', '/example', undefined, {
       headers: { accept: 'application/json' },
     });
 
     expect(second.cacheStatus).toBe('HIT');
+    expect(second.cacheKeyHash).toBe(first.cacheKeyHash);
     expect(httpClientService.requestRaw).toHaveBeenCalledTimes(1);
   });
 

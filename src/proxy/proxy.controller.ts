@@ -65,7 +65,7 @@ export class ProxyController {
     const headers = this.buildForwardHeaders(request);
 
     try {
-      const { response, cacheStatus } = await this.proxyService.forward(
+      const { response, cacheStatus, cacheKeyHash } = await this.proxyService.forward(
         method,
         pathWithQuery,
         body,
@@ -82,6 +82,9 @@ export class ProxyController {
       }
       if (cacheStatus) {
         reply.header('x-cache', cacheStatus);
+      }
+      if (cacheKeyHash) {
+        reply.header('x-cache-key-hash', cacheKeyHash);
       }
       // 204/304 responses must not include a response body.
       if (response.status === 204 || response.status === 304) {

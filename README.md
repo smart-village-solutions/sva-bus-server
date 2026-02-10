@@ -95,6 +95,7 @@ Caching rules:
 - `CACHE_BYPASS_PATHS` entries (e.g. `/health`) are never cached.
 
 Cache-relevant GET responses include an `x-cache` header with `HIT`, `MISS`, `STALE`, or `BYPASS` to make cache behavior easier to trace.
+When `CACHE_DEBUG=true`, responses also include `x-cache-key-hash` (hashed cache key fingerprint) to help correlate cache variants without exposing raw cache keys.
 
 ## Cache Usage Example
 

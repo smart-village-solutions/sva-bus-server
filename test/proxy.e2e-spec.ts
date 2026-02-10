@@ -96,6 +96,7 @@ describe('Proxy endpoint (e2e)', () => {
           if (key === 'HTTP_CLIENT_BASE_URL') return '';
           if (key === 'HTTP_CLIENT_TIMEOUT') return '10000';
           if (key === 'HTTP_CLIENT_RETRIES') return '2';
+          if (key === 'CACHE_DEBUG') return 'true';
           return undefined;
         },
       })
@@ -147,6 +148,7 @@ describe('Proxy endpoint (e2e)', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true });
     expectCacheHeader(response);
+    expect(String(response.headers['x-cache-key-hash'] ?? '')).toHaveLength(32);
     expect(httpClientService.requestRaw).toHaveBeenCalledWith(
       'GET',
       '/test?foo=bar',
