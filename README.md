@@ -90,6 +90,7 @@ Notes:
 - The same rate-limit settings also apply to pre-auth and admin endpoints.
 - If Redis is unavailable, `/api/v1/**` returns 503 because API key validation cannot be performed (fail-closed).
 - Admin operations for API keys are exposed under `/internal/api-keys` and protected with `Authorization: Bearer <ADMIN_API_TOKEN>`.
+- Admin cache invalidation is exposed under `/internal/cache/invalidate` and protected with `Authorization: Bearer <ADMIN_API_TOKEN>`.
 - The proxy injects the upstream `api_key` only when the client does not already provide one.
 - The proxy forwards only allowlisted headers (`accept`, `accept-encoding`, `accept-language`, `authorization`, `content-type`, `user-agent`, `api_key`, and `x-*`).
 - `x-api-key` is never forwarded to upstream.
@@ -110,6 +111,40 @@ Caching rules:
 
 Cache-relevant GET responses include an `x-cache` header with `HIT`, `MISS`, `STALE`, or `BYPASS` to make cache behavior easier to trace.
 When `CACHE_DEBUG=true`, responses also include `x-cache-key-hash` (hashed cache key fingerprint) to help correlate cache variants without exposing raw cache keys.
+
+### Manual Cache Invalidation (Admin)
+
+Manual invalidation targets proxy GET cache keys only (`proxy:GET:*`).
+
+```bash
+curl -X POST "http://localhost:3000/internal/cache/invalidate" \
+  -H "authorization: Bearer <ADMIN_API_TOKEN>" \
+  -H "content-type: application/json" \
+  -d '{"scope":"exact","path":"/pst/find?areaId=10790"}'
+```
+
+Supported scopes:
+
+- `exact`: invalidate one path/query target (`strict=false` default invalidates all variants for that path)
+- `prefix`: invalidate all keys under a path prefix (`pathPrefix`)
+- `all`: invalidate all proxy GET cache keys
+
+Optional fields:
+
+- `dryRun: true`: only report `matched`, do not delete keys
+- `strict: true` + `headers` on `exact`: invalidate exactly one variant by key-shaping headers (`accept`, `acceptLanguage`, `apiKey`)
+
+Response shape:
+
+```json
+{
+  "ok": true,
+  "scope": "exact",
+  "dryRun": false,
+  "matched": 1,
+  "deleted": 1
+}
+```
 
 ## Cache Usage Example
 

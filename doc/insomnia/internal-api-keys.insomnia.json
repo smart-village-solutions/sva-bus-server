@@ -29,6 +29,12 @@
       "name": "internal/api-keys"
     },
     {
+      "_id": "fld_internal_cache",
+      "_type": "request_group",
+      "parentId": "wrk_bb_bus_server_internal_api_keys",
+      "name": "internal/cache"
+    },
+    {
       "_id": "req_create_api_key",
       "_type": "request",
       "parentId": "fld_internal_api_keys",
@@ -97,6 +103,94 @@
         "type": "bearer",
         "token": "{{ _.admin_bearer_token }}"
       }
+    },
+    {
+      "_id": "req_cache_invalidate_exact",
+      "_type": "request",
+      "parentId": "fld_internal_cache",
+      "name": "Invalidate Cache (exact)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/internal/cache/invalidate",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"scope\": \"exact\",\n  \"path\": \"/pst/find?areaId=10790\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.admin_bearer_token }}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ]
+    },
+    {
+      "_id": "req_cache_invalidate_prefix",
+      "_type": "request",
+      "parentId": "fld_internal_cache",
+      "name": "Invalidate Cache (prefix)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/internal/cache/invalidate",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"scope\": \"prefix\",\n  \"pathPrefix\": \"/pst/find\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.admin_bearer_token }}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ]
+    },
+    {
+      "_id": "req_cache_invalidate_all",
+      "_type": "request",
+      "parentId": "fld_internal_cache",
+      "name": "Invalidate Cache (all)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/internal/cache/invalidate",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"scope\": \"all\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.admin_bearer_token }}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ]
+    },
+    {
+      "_id": "req_cache_invalidate_dry_run",
+      "_type": "request",
+      "parentId": "fld_internal_cache",
+      "name": "Invalidate Cache (dry-run)",
+      "method": "POST",
+      "url": "{{ _.base_url }}/internal/cache/invalidate",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"scope\": \"exact\",\n  \"path\": \"/pst/find?areaId=10790\",\n  \"dryRun\": true\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ _.admin_bearer_token }}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ]
     }
   ]
 }
