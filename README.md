@@ -41,6 +41,10 @@ cp .env.example .env
 - `CACHE_IGNORE_UPSTREAM_CONTROL`: Ignore upstream `cache-control` directives and use local TTLs (default: false)
 - `CACHE_BYPASS_PATHS`: Comma-separated list of path prefixes that should never be cached (default: empty)
 - `CACHE_DEBUG`: Enable cache debug logging (default: false)
+- `API_KEYS_REDIS_PREFIX`: Redis key prefix for client API keys + rate limits (default: `api-keys`)
+- `API_KEYS_RATE_LIMIT_WINDOW_SECONDS`: Rate-limit window length in seconds (default: `60`)
+- `API_KEYS_RATE_LIMIT_MAX_REQUESTS`: Max requests per API key and window (default: `120`)
+- `ADMIN_API_TOKEN`: Bearer token for internal API key admin endpoints (`/internal/api-keys`)
 
 ## Health Check
 
@@ -65,20 +69,30 @@ Versioning applies only to proxied upstream requests; service health endpoints r
 The upstream base URL must be origin-only (no path segment) so proxy routes can map directly to upstream paths.
 
 ```bash
-curl "http://localhost:3000/api/v1/test?foo=bar"
+curl "http://localhost:3000/api/v1/test?foo=bar" \
+  -H "x-api-key: <client-api-key>"
 ```
 
 POST requests forward JSON bodies:
 
 ```bash
-curl -X POST "http://localhost:3000/api/v1/example" -H "content-type: application/json" -d '{"key":"value"}'
+curl -X POST "http://localhost:3000/api/v1/example" \
+  -H "x-api-key: <client-api-key>" \
+  -H "content-type: application/json" \
+  -d '{"key":"value"}'
 ```
 
 Notes:
 
-- The proxy currently has no authentication or rate limiting. Add those before exposing it publicly.
-- The proxy injects the upstream `api_key` only when the client does not already provide one, so protect `/api/v1` behind auth/rate limiting or keep it on an internal network.
+- `/api/v1/**` requires a valid client API key via `x-api-key`.
+- API keys are stored in Redis (hashed) and validated before proxying.
+- Rate limiting is enforced per API key and backed by Redis counters.
+- The same rate-limit settings also apply to pre-auth and admin endpoints.
+- If Redis is unavailable, `/api/v1/**` returns 503 because API key validation cannot be performed (fail-closed).
+- Admin operations for API keys are exposed under `/internal/api-keys` and protected with `Authorization: Bearer <ADMIN_API_TOKEN>`.
+- The proxy injects the upstream `api_key` only when the client does not already provide one.
 - The proxy forwards only allowlisted headers (`accept`, `accept-encoding`, `accept-language`, `authorization`, `content-type`, `user-agent`, `api_key`, and `x-*`).
+- `x-api-key` is never forwarded to upstream.
 
 ### Proxy Caching
 

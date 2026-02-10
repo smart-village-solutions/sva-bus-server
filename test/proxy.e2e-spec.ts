@@ -7,8 +7,12 @@ import type { Cache } from 'cache-manager';
 import { AppModule } from '../src/app.module';
 import { HttpClientService } from '../src/http-client/http-client.service';
 import { buildProxyCacheKey } from '../src/proxy/proxy-cache';
+import { sha256Hex } from '../src/utils/hash';
 
 const CACHE_STATUSES = new Set(['HIT', 'MISS', 'STALE', 'BYPASS']);
+const TEST_CLIENT_API_KEY = 'client-key-e2e';
+const TEST_ADMIN_TOKEN = 'admin-token-e2e';
+const TEST_KEYS_PREFIX = 'test-api-keys';
 
 const expectCacheHeader = (response: { headers: Record<string, unknown> }) => {
   const cacheHeader = response.headers['x-cache'];
@@ -36,9 +40,37 @@ describe('Proxy endpoint (e2e)', () => {
   let httpClientService: { requestRaw: jest.Mock };
   let cacheStore: Map<string, unknown>;
   let cacheExpiry: Map<string, number>;
+  let redisStore: Map<string, string>;
+  let redisSets: Map<string, Set<string>>;
+  let redisExpiry: Map<string, number>;
   let cacheManager: Cache;
   let originalBaseUrl: string | undefined;
   let originalBodyLimit: string | undefined;
+
+  type InjectRequest = Exclude<Parameters<NestFastifyApplication['inject']>[0], string>;
+
+  const clearExpiredRedis = () => {
+    const now = Date.now();
+    for (const [key, expiresAt] of redisExpiry.entries()) {
+      if (now >= expiresAt) {
+        redisStore.delete(key);
+        redisSets.delete(key);
+        redisExpiry.delete(key);
+      }
+    }
+  };
+
+  const injectProxy = (request: InjectRequest): ReturnType<NestFastifyApplication['inject']> => {
+    const headers = {
+      ...(request?.headers ?? {}),
+      'x-api-key': TEST_CLIENT_API_KEY,
+    };
+
+    return app.inject({
+      ...request,
+      headers,
+    });
+  };
 
   beforeAll(async () => {
     originalBaseUrl = process.env.HTTP_CLIENT_BASE_URL;
@@ -48,6 +80,9 @@ describe('Proxy endpoint (e2e)', () => {
 
     cacheStore = new Map();
     cacheExpiry = new Map();
+    redisStore = new Map();
+    redisSets = new Map();
+    redisExpiry = new Map();
     cacheManager = {
       get: jest.fn(async (key: string) => {
         const expiresAt = cacheExpiry.get(key);
@@ -75,6 +110,60 @@ describe('Proxy endpoint (e2e)', () => {
       wrap: jest.fn(),
       store: {
         client: {
+          get: jest.fn(async (key: string) => {
+            clearExpiredRedis();
+            return redisStore.get(key) ?? null;
+          }),
+          set: jest.fn(async (key: string, value: string) => {
+            clearExpiredRedis();
+            redisStore.set(key, value);
+            redisSets.delete(key);
+            return 'OK';
+          }),
+          del: jest.fn(async (key: string) => {
+            clearExpiredRedis();
+            const existed = redisStore.delete(key) || redisSets.delete(key) ? 1 : 0;
+            redisExpiry.delete(key);
+            return existed;
+          }),
+          incr: jest.fn(async (key: string) => {
+            clearExpiredRedis();
+            const current = Number(redisStore.get(key) ?? '0') + 1;
+            redisStore.set(key, String(current));
+            return current;
+          }),
+          expire: jest.fn(async (key: string, seconds: number) => {
+            clearExpiredRedis();
+            if (!redisStore.has(key) && !redisSets.has(key)) {
+              return 0;
+            }
+            redisExpiry.set(key, Date.now() + seconds * 1000);
+            return 1;
+          }),
+          sAdd: jest.fn(async (key: string, member: string) => {
+            clearExpiredRedis();
+            const members = redisSets.get(key) ?? new Set<string>();
+            const sizeBefore = members.size;
+            members.add(member);
+            redisSets.set(key, members);
+            return members.size > sizeBefore ? 1 : 0;
+          }),
+          sMembers: jest.fn(async (key: string) => {
+            clearExpiredRedis();
+            return [...(redisSets.get(key) ?? new Set<string>())];
+          }),
+          sRem: jest.fn(async (key: string, member: string) => {
+            clearExpiredRedis();
+            const members = redisSets.get(key);
+            if (!members) {
+              return 0;
+            }
+            const existed = members.delete(member) ? 1 : 0;
+            if (members.size === 0) {
+              redisSets.delete(key);
+            }
+            return existed;
+          }),
           ping: jest.fn().mockResolvedValue('PONG'),
         },
         isFallback: false,
@@ -97,6 +186,10 @@ describe('Proxy endpoint (e2e)', () => {
           if (key === 'HTTP_CLIENT_TIMEOUT') return '10000';
           if (key === 'HTTP_CLIENT_RETRIES') return '2';
           if (key === 'CACHE_DEBUG') return 'true';
+          if (key === 'API_KEYS_REDIS_PREFIX') return TEST_KEYS_PREFIX;
+          if (key === 'API_KEYS_RATE_LIMIT_WINDOW_SECONDS') return 60;
+          if (key === 'API_KEYS_RATE_LIMIT_MAX_REQUESTS') return 5;
+          if (key === 'ADMIN_API_TOKEN') return TEST_ADMIN_TOKEN;
           return undefined;
         },
       })
@@ -118,6 +211,22 @@ describe('Proxy endpoint (e2e)', () => {
     httpClientService.requestRaw.mockReset();
     cacheStore.clear();
     cacheExpiry.clear();
+    redisStore.clear();
+    redisSets.clear();
+    redisExpiry.clear();
+
+    const hash = sha256Hex(TEST_CLIENT_API_KEY);
+    const keyId = 'key-e2e-1';
+    const record = {
+      keyId,
+      hash,
+      owner: 'e2e-suite',
+      createdAt: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+      revoked: false,
+    };
+    redisStore.set(`${TEST_KEYS_PREFIX}:hash:${hash}`, keyId);
+    redisStore.set(`${TEST_KEYS_PREFIX}:key:${keyId}`, JSON.stringify(record));
+    redisSets.set(`${TEST_KEYS_PREFIX}:index`, new Set([keyId]));
   });
 
   afterAll(async () => {
@@ -137,7 +246,7 @@ describe('Proxy endpoint (e2e)', () => {
   it('forwards GET requests', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
-    const response = await app.inject({
+    const response = await injectProxy({
       method: 'GET',
       url: '/api/v1/test?foo=bar',
       headers: {
@@ -159,10 +268,96 @@ describe('Proxy endpoint (e2e)', () => {
     );
   });
 
+  it('returns 401 when x-api-key is missing', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/test',
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(httpClientService.requestRaw).not.toHaveBeenCalled();
+  });
+
+  it('creates and revokes api keys via admin endpoints', async () => {
+    const createResponse = await app.inject({
+      method: 'POST',
+      url: '/internal/api-keys',
+      headers: {
+        authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+        'content-type': 'application/json',
+      },
+      payload: {
+        owner: 'partner-portal-prod',
+      },
+    });
+
+    expect(createResponse.statusCode).toBe(201);
+    const created = createResponse.json() as { apiKey: string; keyId: string };
+    expect(created.apiKey).toMatch(/^sk_/);
+    expect(created.keyId).toBeTruthy();
+
+    httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
+    const validProxyResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/test',
+      headers: {
+        'x-api-key': created.apiKey,
+      },
+    });
+    expect(validProxyResponse.statusCode).toBe(200);
+
+    const revokeResponse = await app.inject({
+      method: 'POST',
+      url: `/internal/api-keys/${created.keyId}/revoke`,
+      headers: {
+        authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+      },
+    });
+    expect(revokeResponse.statusCode).toBe(201);
+
+    const revokedProxyResponse = await app.inject({
+      method: 'GET',
+      url: '/api/v1/test',
+      headers: {
+        'x-api-key': created.apiKey,
+      },
+    });
+    expect(revokedProxyResponse.statusCode).toBe(401);
+  });
+
+  it('rejects admin endpoints without valid bearer token', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/internal/api-keys',
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('returns 429 when rate limit is exceeded', async () => {
+    httpClientService.requestRaw.mockResolvedValue(buildUpstreamResponse());
+
+    for (let index = 0; index < 5; index += 1) {
+      const response = await injectProxy({
+        method: 'GET',
+        url: `/api/v1/limit-${index}`,
+      });
+      expect(response.statusCode).toBe(200);
+    }
+
+    const limited = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/limit-over',
+    });
+
+    expect(limited.statusCode).toBe(429);
+    expect(limited.headers['retry-after']).toBeDefined();
+  });
+
   it('returns HIT after a cached MISS', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
-    const first = await app.inject({
+    const first = await injectProxy({
       method: 'GET',
       url: '/api/v1/pst/find?searchWord=personalausweis%20beantra&areaId=10790',
     });
@@ -170,7 +365,7 @@ describe('Proxy endpoint (e2e)', () => {
     expect(first.statusCode).toBe(200);
     expect(first.headers['x-cache']).toBe('MISS');
 
-    const second = await app.inject({
+    const second = await injectProxy({
       method: 'GET',
       url: '/api/v1/pst/find?searchWord=personalausweis%20beantra&areaId=10790',
     });
@@ -195,7 +390,7 @@ describe('Proxy endpoint (e2e)', () => {
       __cacheEntry: true,
     });
 
-    const response = await app.inject({
+    const response = await injectProxy({
       method: 'GET',
       url: '/api/v1/pst/find?searchWord=personalausweis%20beantra&areaId=10790',
       headers: {
@@ -211,7 +406,7 @@ describe('Proxy endpoint (e2e)', () => {
   it('returns BYPASS when authorization header is present', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
-    const response = await app.inject({
+    const response = await injectProxy({
       method: 'GET',
       url: '/api/v1/pst/find?searchWord=personalausweis%20beantra&areaId=10790',
       headers: {
@@ -226,7 +421,7 @@ describe('Proxy endpoint (e2e)', () => {
   it('forwards api_key header when missing on request', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
-    const response = await app.inject({
+    const response = await injectProxy({
       method: 'GET',
       url: '/api/v1/api-key',
     });
@@ -246,7 +441,7 @@ describe('Proxy endpoint (e2e)', () => {
   it('forwards POST bodies and headers', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse({ status: 201 }));
 
-    const response = await app.inject({
+    const response = await injectProxy({
       method: 'POST',
       url: '/api/v1/post?foo=bar',
       headers: {
@@ -275,7 +470,7 @@ describe('Proxy endpoint (e2e)', () => {
   it('preserves client api_key header', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
-    const response = await app.inject({
+    const response = await injectProxy({
       method: 'GET',
       url: '/api/v1/override',
       headers: {
@@ -298,7 +493,7 @@ describe('Proxy endpoint (e2e)', () => {
   it('filters hop-by-hop headers', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
-    await app.inject({
+    await injectProxy({
       method: 'GET',
       url: '/api/v1/headers',
       headers: {
@@ -319,7 +514,7 @@ describe('Proxy endpoint (e2e)', () => {
   it('filters x-forwarded headers', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
-    await app.inject({
+    await injectProxy({
       method: 'GET',
       url: '/api/v1/headers-forwarded',
       headers: {
@@ -339,10 +534,26 @@ describe('Proxy endpoint (e2e)', () => {
     expect(callOptions?.headers).not.toHaveProperty('x-real-ip');
   });
 
+  it('does not forward client x-api-key header to upstream', async () => {
+    httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
+
+    await injectProxy({
+      method: 'GET',
+      url: '/api/v1/headers-api-key',
+      headers: {
+        'x-request-id': 'req-3',
+      },
+    });
+
+    const callOptions = httpClientService.requestRaw.mock.calls[0]?.[3];
+    expect(callOptions?.headers).toEqual(expect.objectContaining({ 'x-request-id': 'req-3' }));
+    expect(callOptions?.headers).not.toHaveProperty('x-api-key');
+  });
+
   it('filters non-allowlisted headers', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
-    await app.inject({
+    await injectProxy({
       method: 'GET',
       url: '/api/v1/headers-block',
       headers: {
@@ -361,7 +572,7 @@ describe('Proxy endpoint (e2e)', () => {
       buildUpstreamResponse({ status: 404, body: { message: 'not found' } }),
     );
 
-    const response = await app.inject({
+    const response = await injectProxy({
       method: 'GET',
       url: '/api/v1/missing',
     });
@@ -374,7 +585,7 @@ describe('Proxy endpoint (e2e)', () => {
   it('forwards accept-language header when provided', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
-    const response = await app.inject({
+    const response = await injectProxy({
       method: 'GET',
       url: '/api/v1/accept-language',
       headers: {
@@ -397,7 +608,7 @@ describe('Proxy endpoint (e2e)', () => {
   it('does not add accept-language when missing', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
-    const response = await app.inject({
+    const response = await injectProxy({
       method: 'GET',
       url: '/api/v1/accept-language-missing',
     });
@@ -414,7 +625,7 @@ describe('Proxy endpoint (e2e)', () => {
       buildUpstreamResponse({ status: 204, body: null, contentType: null }),
     );
 
-    const response = await app.inject({
+    const response = await injectProxy({
       method: 'GET',
       url: '/api/v1/empty',
     });
@@ -427,7 +638,7 @@ describe('Proxy endpoint (e2e)', () => {
   it('returns 502 when upstream fails', async () => {
     httpClientService.requestRaw.mockRejectedValueOnce(new Error('boom'));
 
-    const response = await app.inject({
+    const response = await injectProxy({
       method: 'GET',
       url: '/api/v1/fail',
     });
@@ -438,7 +649,7 @@ describe('Proxy endpoint (e2e)', () => {
   it('forwards requests to the root path', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
-    const response = await app.inject({
+    const response = await injectProxy({
       method: 'GET',
       url: '/api/v1',
     });
@@ -453,7 +664,7 @@ describe('Proxy endpoint (e2e)', () => {
   });
 
   it('returns 404 for unsupported methods', async () => {
-    const response = await app.inject({
+    const response = await injectProxy({
       method: 'PUT',
       url: '/api/v1/unsupported',
     });
@@ -463,7 +674,7 @@ describe('Proxy endpoint (e2e)', () => {
   });
 
   it('returns 404 for delete requests', async () => {
-    const response = await app.inject({
+    const response = await injectProxy({
       method: 'DELETE',
       url: '/api/v1/unsupported',
     });
@@ -475,7 +686,7 @@ describe('Proxy endpoint (e2e)', () => {
   it('rejects payloads larger than 1mb by default', async () => {
     const payload = JSON.stringify({ data: 'a'.repeat(1048577) });
 
-    const response = await app.inject({
+    const response = await injectProxy({
       method: 'POST',
       url: '/api/v1/too-large',
       headers: {

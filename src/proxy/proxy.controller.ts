@@ -8,13 +8,16 @@ import {
   Req,
   Res,
   UnsupportedMediaTypeException,
+  UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
+import { ProxyAccessGuard } from '../api-keys/proxy-access.guard';
 import { ProxyService } from './proxy.service';
 
 @Controller('api/v1')
+@UseGuards(ProxyAccessGuard)
 export class ProxyController {
   private readonly apiKey: string | null;
 
@@ -176,6 +179,7 @@ export class ProxyController {
       'x-forwarded-proto',
       'x-forwarded-port',
       'x-real-ip',
+      'x-api-key',
     ]);
 
     // Normalize the connection header to a single token list so we apply the cleanup once.

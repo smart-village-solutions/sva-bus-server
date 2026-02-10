@@ -42,6 +42,10 @@ type CacheStore = {
   name?: string;
 };
 
+type CacheManagerWithStore = Cache & {
+  store?: CacheStore;
+};
+
 @Injectable()
 export class CacheService {
   private readonly logger = new Logger(CacheService.name);
@@ -143,7 +147,7 @@ export class CacheService {
 
   async checkHealth(): Promise<{ status: 'ok' | 'degraded'; message?: string }> {
     try {
-      const store = (this.cacheManager as { store?: CacheStore }).store;
+      const store = (this.cacheManager as CacheManagerWithStore).store;
       if (!store?.client?.ping) {
         return { status: 'degraded', message: 'Cache store client unavailable' };
       }
@@ -153,6 +157,15 @@ export class CacheService {
       this.logger.warn('Cache health check failed');
       return { status: 'degraded', message: 'Cache backend unreachable' };
     }
+  }
+
+  getStoreClient<T = unknown>(): T | null {
+    const store = (this.cacheManager as CacheManagerWithStore).store;
+    if (!store || store.isFallback) {
+      return null;
+    }
+
+    return (store.client as T | undefined) ?? null;
   }
 
   private async getEntry<T>(key: string): Promise<CacheEntry<T> | null> {
