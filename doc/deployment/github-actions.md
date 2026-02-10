@@ -67,3 +67,51 @@ After deployment, the workflow checks `HEALTHCHECK_URL` with retries. Deployment
 ## Rollback
 
 Rollback is performed by redeploying a previous known-good commit SHA, which re-renders `quantum.yml` and updates the stack to that immutable image tag.
+
+## E2E Pipeline Validation (OpenSpec Task 5.3)
+
+Datum: 10.02.2026
+Umgebung: `production`
+
+### 1) Success-Szenario (Deploy + Verify erfolgreich)
+
+- Workflow: `Deploy Production`
+- Run-ID/Link: https://github.com/smart-village-solutions/sva-bus-server/actions/runs/21833051113/attempts/1
+- Commit-SHA: `4e3bf15018a3b61c345b1b1c7fabf0c7d21d039a`
+- Image-Ref (GHCR): `ghcr.io/smart-village-solutions/sva-bus-server:4e3bf15018a3b61c345b1b1c7fabf0c7d21d039a`
+- Ergebnis:
+  - [x] `Preflight and Build Image` erfolgreich
+  - [x] `Deploy to Quantum` erfolgreich
+  - [x] `Verify health endpoint` erfolgreich
+- Checks:
+  - [x] `https://bus-api.smart-village.app/health` liefert 200
+  - [x] `https://bus-api.smart-village.app/health/cache` liefert 200
+
+### 2) Failure-Szenario (falsche HEALTHCHECK_URL)
+
+- Workflow: `Deploy Production`
+- Run-ID/Link: https://github.com/smart-village-solutions/sva-bus-server/actions/runs/21858108306/attempts/1
+- Commit-SHA: `4e3bf15018a3b61c345b1b1c7fabf0c7d21d039a`
+- Manipulation: `HEALTHCHECK_URL` absichtlich falsch gesetzt (`https://bus-api.smart-village.app/healthy`)
+- Erwartung:
+  - Deploy/Stack-Update kann erfolgreich sein
+  - `Verify health endpoint` schlägt fehl (`exit code 1`)
+- Ergebnis:
+  - [x] Fehler im Schritt `Verify health endpoint` aufgetreten
+  - [x] Fehlermeldung dokumentiert "Health check failed" - "The requested URL returned error: 404"
+- Checks:
+  - [x] `https://bus-api.smart-village.app/health` liefert 200
+  - [x] `https://bus-api.smart-village.app/health/cache` liefert 200
+
+### 3) Rollback-Drill (Re-run mit vorheriger erfolgreichem Versuch)
+
+- Workflow: `Deploy Production`
+- Run-ID/Link: https://github.com/smart-village-solutions/sva-bus-server/actions/runs/21833051113/attempts/2
+- Commit-SHA: `4e3bf15018a3b61c345b1b1c7fabf0c7d21d039a`
+- Ergebnis:
+  - [x] `Preflight and Build Image` erfolgreich
+  - [x] `Deploy to Quantum` erfolgreich
+  - [x] `Verify health endpoint` erfolgreich
+- Checks:
+  - [x] `https://bus-api.smart-village.app/health` liefert 200
+  - [x] `https://bus-api.smart-village.app/health/cache` liefert 200
