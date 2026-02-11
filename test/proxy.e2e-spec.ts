@@ -49,6 +49,43 @@ describe('Proxy endpoint (e2e)', () => {
 
   type InjectRequest = Exclude<Parameters<NestFastifyApplication['inject']>[0], string>;
 
+  const redisPatternToRegex = (pattern: string): RegExp => {
+    let regex = '^';
+
+    for (let index = 0; index < pattern.length; index += 1) {
+      const char = pattern[index];
+      if (!char) {
+        continue;
+      }
+
+      if (char === '\\') {
+        const next = pattern[index + 1];
+        if (next) {
+          regex += next.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
+          index += 1;
+        } else {
+          regex += '\\\\';
+        }
+        continue;
+      }
+
+      if (char === '*') {
+        regex += '.*';
+        continue;
+      }
+
+      if (char === '?') {
+        regex += '.';
+        continue;
+      }
+
+      regex += char.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
+    }
+
+    regex += '$';
+    return new RegExp(regex);
+  };
+
   const clearExpiredRedis = () => {
     const now = Date.now();
     for (const [key, expiresAt] of redisExpiry.entries()) {
@@ -120,11 +157,21 @@ describe('Proxy endpoint (e2e)', () => {
             redisSets.delete(key);
             return 'OK';
           }),
-          del: jest.fn(async (key: string) => {
+          del: jest.fn(async (...keys: string[]) => {
             clearExpiredRedis();
-            const existed = redisStore.delete(key) || redisSets.delete(key) ? 1 : 0;
-            redisExpiry.delete(key);
-            return existed;
+            let deleted = 0;
+            keys.forEach((key) => {
+              const deletedInRedis = redisStore.delete(key) || redisSets.delete(key);
+              const deletedInCache = cacheStore.delete(key);
+              if (deletedInCache) {
+                cacheExpiry.delete(key);
+              }
+              if (deletedInRedis || deletedInCache) {
+                deleted += 1;
+              }
+              redisExpiry.delete(key);
+            });
+            return deleted;
           }),
           incr: jest.fn(async (key: string) => {
             clearExpiredRedis();
@@ -164,6 +211,16 @@ describe('Proxy endpoint (e2e)', () => {
             }
             return existed;
           }),
+          scan: jest.fn(
+            async (cursor: string | number, options: { MATCH: string; COUNT?: number }) => {
+              clearExpiredRedis();
+              const matcher = redisPatternToRegex(options.MATCH);
+              const keys = [...redisStore.keys(), ...redisSets.keys(), ...cacheStore.keys()].filter(
+                (key) => matcher.test(key),
+              );
+              return [String(cursor ?? '0') === '0' ? '0' : '0', keys] as [string, string[]];
+            },
+          ),
           ping: jest.fn().mockResolvedValue('PONG'),
         },
         isFallback: false,
@@ -329,6 +386,199 @@ describe('Proxy endpoint (e2e)', () => {
     const response = await app.inject({
       method: 'GET',
       url: '/internal/api-keys',
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
+
+  it('invalidates exact cache path variants via admin endpoint', async () => {
+    httpClientService.requestRaw.mockResolvedValue(buildUpstreamResponse());
+
+    const first = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/pst/find?searchWord=test&areaId=10790',
+      headers: {
+        accept: '*/*',
+        'accept-language': 'de-DE',
+      },
+    });
+    expect(first.statusCode).toBe(200);
+    expect(first.headers['x-cache']).toBe('MISS');
+
+    const second = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/pst/find?searchWord=test&areaId=10790',
+      headers: {
+        accept: '*/*',
+        'accept-language': 'de-DE',
+      },
+    });
+    expect(second.statusCode).toBe(200);
+    expect(second.headers['x-cache']).toBe('HIT');
+
+    const invalidate = await app.inject({
+      method: 'POST',
+      url: '/internal/cache/invalidate',
+      headers: {
+        authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+        'content-type': 'application/json',
+      },
+      payload: {
+        scope: 'exact',
+        path: '/pst/find?searchWord=test&areaId=10790',
+      },
+    });
+    expect(invalidate.statusCode).toBe(201);
+    expect(invalidate.json()).toEqual(
+      expect.objectContaining({
+        ok: true,
+        scope: 'exact',
+        matched: 1,
+        deleted: 1,
+      }),
+    );
+
+    const third = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/pst/find?searchWord=test&areaId=10790',
+      headers: {
+        accept: '*/*',
+        'accept-language': 'de-DE',
+      },
+    });
+    expect(third.statusCode).toBe(200);
+    expect(third.headers['x-cache']).toBe('MISS');
+  });
+
+  it('supports dryRun invalidation without deleting cache entries', async () => {
+    httpClientService.requestRaw.mockResolvedValue(buildUpstreamResponse());
+
+    await injectProxy({
+      method: 'GET',
+      url: '/api/v1/pst/find?searchWord=dryrun&areaId=10790',
+    });
+
+    const cached = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/pst/find?searchWord=dryrun&areaId=10790',
+    });
+    expect(cached.statusCode).toBe(200);
+    expect(cached.headers['x-cache']).toBe('HIT');
+
+    const dryRun = await app.inject({
+      method: 'POST',
+      url: '/internal/cache/invalidate',
+      headers: {
+        authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+        'content-type': 'application/json',
+      },
+      payload: {
+        scope: 'exact',
+        path: '/pst/find?searchWord=dryrun&areaId=10790',
+        dryRun: true,
+      },
+    });
+    expect(dryRun.statusCode).toBe(201);
+    expect(dryRun.json()).toEqual(
+      expect.objectContaining({
+        ok: true,
+        dryRun: true,
+        matched: 1,
+        deleted: 0,
+      }),
+    );
+
+    const afterDryRun = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/pst/find?searchWord=dryrun&areaId=10790',
+    });
+    expect(afterDryRun.statusCode).toBe(200);
+    expect(afterDryRun.headers['x-cache']).toBe('HIT');
+  });
+
+  it('invalidates by prefix and all scopes via admin endpoint', async () => {
+    httpClientService.requestRaw.mockResolvedValue(buildUpstreamResponse());
+
+    await injectProxy({
+      method: 'GET',
+      url: '/api/v1/pst/find?searchWord=prefix-a&areaId=10790',
+    });
+    await injectProxy({
+      method: 'GET',
+      url: '/api/v1/pst/other?searchWord=prefix-b&areaId=10790',
+    });
+
+    const prefixInvalidate = await app.inject({
+      method: 'POST',
+      url: '/internal/cache/invalidate',
+      headers: {
+        authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+        'content-type': 'application/json',
+      },
+      payload: {
+        scope: 'prefix',
+        pathPrefix: '/pst/find',
+      },
+    });
+    expect(prefixInvalidate.statusCode).toBe(201);
+    expect(prefixInvalidate.json()).toEqual(
+      expect.objectContaining({
+        ok: true,
+        scope: 'prefix',
+      }),
+    );
+
+    const afterPrefix = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/pst/find?searchWord=prefix-a&areaId=10790',
+    });
+    expect(afterPrefix.statusCode).toBe(200);
+    expect(afterPrefix.headers['x-cache']).toBe('MISS');
+
+    const otherPath = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/pst/other?searchWord=prefix-b&areaId=10790',
+    });
+    expect(otherPath.statusCode).toBe(200);
+    expect(otherPath.headers['x-cache']).toBe('HIT');
+
+    const allInvalidate = await app.inject({
+      method: 'POST',
+      url: '/internal/cache/invalidate',
+      headers: {
+        authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+        'content-type': 'application/json',
+      },
+      payload: {
+        scope: 'all',
+      },
+    });
+    expect(allInvalidate.statusCode).toBe(201);
+    expect(allInvalidate.json()).toEqual(
+      expect.objectContaining({
+        ok: true,
+        scope: 'all',
+      }),
+    );
+
+    const afterAll = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/pst/other?searchWord=prefix-b&areaId=10790',
+    });
+    expect(afterAll.statusCode).toBe(200);
+    expect(afterAll.headers['x-cache']).toBe('MISS');
+  });
+
+  it('rejects cache invalidation endpoint without admin token', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/internal/cache/invalidate',
+      headers: {
+        'content-type': 'application/json',
+      },
+      payload: {
+        scope: 'all',
+      },
     });
 
     expect(response.statusCode).toBe(401);
