@@ -26,7 +26,7 @@ jobs:
       image_ref: ${{ steps.image.outputs.image_ref }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -78,7 +78,7 @@ jobs:
       name: production
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Render quantum.yml from compose templates
         env:
@@ -139,43 +139,22 @@ jobs:
             mv quantum.with-version.yml quantum.yml
           fi
 
+      - name: Setup quantum-cli (uses @v1 with username/password, @v2.0.0 for API-Key)
+        uses: hostwithquantum/setup-quantum-cli@v1
+        with:
+          username: ${{ secrets.QUANTUM_USER }}
+          password: ${{ secrets.QUANTUM_PASSWORD }}
       - name: Deploy stack via Quantum CLI
         env:
-          QUANTUM_USER: ${{ secrets.QUANTUM_USER }}
-          QUANTUM_PASSWORD: ${{ secrets.QUANTUM_PASSWORD }}
           QUANTUM_ENDPOINT: ${{ vars.QUANTUM_ENDPOINT }}
           QUANTUM_STACK: ${{ vars.QUANTUM_STACK }}
           QUANTUM_HOST: ${{ vars.QUANTUM_HOST }}
         run: |
-          if [ -z "$QUANTUM_USER" ] || [ -z "$QUANTUM_PASSWORD" ] || [ -z "$QUANTUM_ENDPOINT" ] || [ -z "$QUANTUM_STACK" ]; then
-            echo "QUANTUM_USER, QUANTUM_PASSWORD, QUANTUM_ENDPOINT, and QUANTUM_STACK are required"
+          if [ -z "${QUANTUM_ENDPOINT}" ] || [ -z "${QUANTUM_STACK}" ]; then
+            echo "QUANTUM_ENDPOINT, and QUANTUM_STACK are required"
             exit 1
           fi
-
-          quantum_cmd='quantum-cli stacks update --create --wait --stack "$QUANTUM_STACK" || quantum-cli stack update --create --wait --stack "$QUANTUM_STACK"'
-
-          if [ -n "$QUANTUM_HOST" ]; then
-            docker run --rm \
-              -e QUANTUM_USER="$QUANTUM_USER" \
-              -e QUANTUM_PASSWORD="$QUANTUM_PASSWORD" \
-              -e QUANTUM_ENDPOINT="$QUANTUM_ENDPOINT" \
-              -e QUANTUM_STACK="$QUANTUM_STACK" \
-              -e HOST="$QUANTUM_HOST" \
-              -v "$PWD:/workspace" \
-              -w /workspace \
-              r.planetary-quantum.com/quantum-public/cli:2 \
-              sh -lc "$quantum_cmd"
-          else
-            docker run --rm \
-              -e QUANTUM_USER="$QUANTUM_USER" \
-              -e QUANTUM_PASSWORD="$QUANTUM_PASSWORD" \
-              -e QUANTUM_ENDPOINT="$QUANTUM_ENDPOINT" \
-              -e QUANTUM_STACK="$QUANTUM_STACK" \
-              -v "$PWD:/workspace" \
-              -w /workspace \
-              r.planetary-quantum.com/quantum-public/cli:2 \
-              sh -lc "$quantum_cmd"
-          fi
+          quantum-cli stacks update --create --wait --stack "${QUANTUM_STACK}"
 
       - name: Verify health endpoint
         env:
