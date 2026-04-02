@@ -82,6 +82,16 @@ curl -X POST "http://localhost:3000/api/v1/example" \
   -d '{"key":"value"}'
 ```
 
+Political area endpoints are exposed as dedicated proxy routes:
+
+```bash
+curl "http://localhost:3000/api/v1/political-area/search?searchWords=Bad&searchWords=Bel*" \
+  -H "x-api-key: <client-api-key>"
+
+curl "http://localhost:3000/api/v1/political-area/11111" \
+  -H "x-api-key: <client-api-key>"
+```
+
 Notes:
 
 - `/api/v1/**` requires a valid client API key via `x-api-key`.
@@ -94,6 +104,8 @@ Notes:
 - The proxy injects the upstream `api_key` only when the client does not already provide one.
 - The proxy forwards only allowlisted headers (`accept`, `accept-encoding`, `accept-language`, `authorization`, `content-type`, `user-agent`, `api_key`, and `x-*`).
 - `x-api-key` is never forwarded to upstream.
+- `/api/v1/political-area/search` and `/api/v1/political-area/:id` are exceptions to `HTTP_CLIENT_BASE_URL` and are always forwarded to `https://gd-api.zfinder.de`.
+- `/api/v1/political-area/search` preserves repeated `searchWords` parameters as repeated upstream query parameters.
 
 ### Proxy Caching
 

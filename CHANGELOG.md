@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.7.0
+
+### Added
+
+- Dedicated proxy endpoints for political area search and detail lookups under `/api/v1/political-area/search` and `/api/v1/political-area/:id`.
+- PoliticalArea requests route to `https://gd-api.zfinder.de` via a request-specific upstream base URL override instead of the default configured upstream base URL.
+- Controller and e2e test coverage for PoliticalArea forwarding, including repeated `searchWords` query parameters and the alternate upstream host selection.
+
 ## 0.6.0
 
 ### Added
