@@ -4,6 +4,7 @@ import {
   Body,
   Controller,
   Get,
+  Param,
   Post,
   Req,
   Res,
@@ -14,11 +15,13 @@ import { ConfigService } from '@nestjs/config';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { ProxyAccessGuard } from '../api-keys/proxy-access.guard';
+import type { HttpRequestOptions } from '../http-client/http-client.service';
 import { ProxyService } from './proxy.service';
 
 @Controller('api/v1')
 @UseGuards(ProxyAccessGuard)
 export class ProxyController {
+  private static readonly POLITICAL_AREA_BASE_URL = 'https://gd-api.zfinder.de';
   private readonly apiKey: string | null;
 
   constructor(
@@ -34,6 +37,36 @@ export class ProxyController {
     @Res({ passthrough: true }) reply: FastifyReply,
   ): Promise<unknown> {
     return this.forwardRequest('GET', request, undefined, reply);
+  }
+
+  @Get('political-area/search')
+  async handlePoliticalAreaSearch(
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<unknown> {
+    const rawQuery = this.extractQueryString(request.url ?? '');
+    const upstreamPath = rawQuery ? `/PoliticalArea/search?${rawQuery}` : '/PoliticalArea/search';
+    return this.forwardUpstreamPath('GET', upstreamPath, request, undefined, reply, {
+      baseUrlOverride: ProxyController.POLITICAL_AREA_BASE_URL,
+    });
+  }
+
+  @Get('political-area/:id')
+  async handlePoliticalAreaById(
+    @Param('id') id: string,
+    @Req() request: FastifyRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+  ): Promise<unknown> {
+    return this.forwardUpstreamPath(
+      'GET',
+      `/PoliticalArea/${encodeURIComponent(id)}`,
+      request,
+      undefined,
+      reply,
+      {
+        baseUrlOverride: ProxyController.POLITICAL_AREA_BASE_URL,
+      },
+    );
   }
 
   @Get('*')
@@ -65,6 +98,17 @@ export class ProxyController {
     const path = this.extractPath(request.url ?? '');
     const rawQuery = this.extractQueryString(request.url ?? '');
     const pathWithQuery = rawQuery ? `${path}?${rawQuery}` : path;
+    return this.forwardUpstreamPath(method, pathWithQuery, request, body, reply);
+  }
+
+  private async forwardUpstreamPath(
+    method: 'GET' | 'POST',
+    pathWithQuery: string,
+    request: FastifyRequest,
+    body: unknown,
+    reply: FastifyReply,
+    options?: HttpRequestOptions,
+  ): Promise<unknown> {
     const headers = this.buildForwardHeaders(request);
 
     try {
@@ -74,6 +118,7 @@ export class ProxyController {
         body,
         {
           headers,
+          ...options,
         },
       );
       reply.status(response.status);

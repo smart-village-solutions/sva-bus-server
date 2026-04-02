@@ -325,6 +325,58 @@ describe('Proxy endpoint (e2e)', () => {
     );
   });
 
+  it('forwards PoliticalArea search requests with repeated searchWords parameters', async () => {
+    httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
+
+    const response = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/political-area/search?searchWords=Bad&searchWords=Bel*',
+      headers: {
+        'x-request-id': 'political-area-search',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+    expect(httpClientService.requestRaw).toHaveBeenCalledWith(
+      'GET',
+      '/PoliticalArea/search?searchWords=Bad&searchWords=Bel*',
+      undefined,
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          api_key: 'test-key',
+          'x-request-id': 'political-area-search',
+        }),
+      }),
+    );
+  });
+
+  it('forwards PoliticalArea detail requests by id', async () => {
+    httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
+
+    const response = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/political-area/11111',
+      headers: {
+        'x-request-id': 'political-area-detail',
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+    expect(httpClientService.requestRaw).toHaveBeenCalledWith(
+      'GET',
+      '/PoliticalArea/11111',
+      undefined,
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          api_key: 'test-key',
+          'x-request-id': 'political-area-detail',
+        }),
+      }),
+    );
+  });
+
   it('returns 401 when x-api-key is missing', async () => {
     const response = await app.inject({
       method: 'GET',

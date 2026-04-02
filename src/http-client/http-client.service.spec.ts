@@ -197,6 +197,34 @@ describe('HttpClientService', () => {
     expect(mockedFetch).not.toHaveBeenCalled();
   });
 
+  it('uses a request-specific base URL override when provided', async () => {
+    mockedFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: {
+        get: (name: string) => (name === 'content-type' ? 'application/json' : null),
+      },
+      text: async () => JSON.stringify({ ok: true }),
+    });
+
+    await expect(
+      service.requestRaw('GET', '/PoliticalArea/11111', undefined, {
+        baseUrlOverride: 'https://gd-api.zfinder.de',
+        retries: 0,
+      }),
+    ).resolves.toEqual({
+      status: 200,
+      body: { ok: true },
+      contentType: 'application/json',
+      headers: {},
+    });
+
+    expect(mockedFetch).toHaveBeenCalledWith(
+      'https://gd-api.zfinder.de/PoliticalArea/11111',
+      expect.any(Object),
+    );
+  });
+
   it('aborts requests when the signal is cancelled', async () => {
     mockedFetch.mockImplementation((_, init) => {
       return new Promise((_, reject) => {

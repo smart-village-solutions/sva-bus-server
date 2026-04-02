@@ -9,6 +9,7 @@ export interface HttpRequestOptions {
   timeoutMs?: number;
   retries?: number;
   signal?: AbortSignal;
+  baseUrlOverride?: string;
 }
 
 export interface HttpClientRawResponse<T> {
@@ -72,7 +73,7 @@ export class HttpClientService implements OnModuleDestroy {
     body?: unknown,
     options?: HttpRequestOptions,
   ): Promise<HttpClientRawResponse<T>> {
-    const url = this.buildUrl(path, options?.query);
+    const url = this.buildUrl(path, options?.query, options?.baseUrlOverride);
     const timeoutMs = this.normalizeTimeoutMs(options?.timeoutMs, this.defaultTimeoutMs);
     const retries = this.normalizeRetries(options?.retries, this.defaultRetries);
     const effectiveRetries = method === 'GET' ? retries : 0;
@@ -137,7 +138,7 @@ export class HttpClientService implements OnModuleDestroy {
     body?: unknown,
     options?: HttpRequestOptions,
   ): Promise<T> {
-    const url = this.buildUrl(path, options?.query);
+    const url = this.buildUrl(path, options?.query, options?.baseUrlOverride);
     const timeoutMs = this.normalizeTimeoutMs(options?.timeoutMs, this.defaultTimeoutMs);
     const retries = this.normalizeRetries(options?.retries, this.defaultRetries);
     const effectiveRetries = method === 'GET' ? retries : 0;
@@ -274,16 +275,19 @@ export class HttpClientService implements OnModuleDestroy {
   private buildUrl(
     path: string,
     query?: Record<string, string | number | boolean | undefined>,
+    baseUrlOverride?: string,
   ): string {
     if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('//')) {
       throw new Error('Absolute proxy URLs are not allowed');
     }
 
-    if (!this.baseUrl) {
+    const effectiveBaseUrl = baseUrlOverride ?? this.baseUrl;
+
+    if (!effectiveBaseUrl) {
       throw new Error('HTTP client base URL is not configured properly');
     }
 
-    const baseUrl = new URL(this.baseUrl);
+    const baseUrl = new URL(effectiveBaseUrl);
     if (baseUrl.pathname && baseUrl.pathname !== '/') {
       throw new Error('HTTP client base URL must not include a path');
     }
