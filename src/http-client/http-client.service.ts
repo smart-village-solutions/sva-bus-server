@@ -225,7 +225,6 @@ export class HttpClientService implements OnModuleDestroy {
     const contentType = response.headers.get('content-type') ?? '';
     const responseBody = await this.parseResponseBody(response, contentType);
     const responseHeaders = this.extractForwardHeaders(response);
-
     return {
       status: response.status,
       ok: response.ok,
@@ -399,6 +398,8 @@ export class HttpClientService implements OnModuleDestroy {
       'last-modified',
       'expires',
       'vary',
+      'datasource',
+      'total-item-count',
       'content-encoding',
       'content-language',
       'content-disposition',

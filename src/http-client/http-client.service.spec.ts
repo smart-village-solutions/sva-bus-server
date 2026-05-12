@@ -115,6 +115,32 @@ describe('HttpClientService', () => {
     });
   });
 
+  it('forwards upstream diagnostic headers in raw responses', async () => {
+    mockedFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: {
+        get: (name: string) => {
+          if (name === 'content-type') return 'application/json';
+          if (name === 'datasource') return 'Rheinland-Pfalz (InfoServiceDataSource)';
+          if (name === 'total-item-count') return '1';
+          return null;
+        },
+      },
+      text: async () => JSON.stringify({ ok: true }),
+    });
+
+    await expect(service.requestRaw('GET', '/diag', undefined, { retries: 0 })).resolves.toEqual({
+      status: 200,
+      body: { ok: true },
+      contentType: 'application/json',
+      headers: {
+        datasource: 'Rheinland-Pfalz (InfoServiceDataSource)',
+        'total-item-count': '1',
+      },
+    });
+  });
+
   it('retries raw GET requests when retries are invalid', async () => {
     mockedFetch.mockRejectedValueOnce(new Error('boom')).mockResolvedValueOnce({
       ok: true,
