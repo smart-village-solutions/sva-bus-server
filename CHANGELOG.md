@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.7.1
+
+### Changed
+
+- Deployment workflow now installs `quantum-cli` via `hostwithquantum/setup-quantum-cli@v1` instead of running the Docker image, simplifying the job and speeding up stack deployments that still use username/password authentication.
+- Quantum deployment step now runs a single `quantum-cli stacks update --create --wait --stack "${QUANTUM_STACK}"` command, removes the redundant `stack` fallback, and keeps only the required step-level environment variables.
+
 ## 0.7.0
 
 ### Added
