@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dedicated proxy endpoints for political area search and detail lookups under `/api/v1/political-area/search` and `/api/v1/political-area/:id`.
 - PoliticalArea requests route to `https://gd-api.zfinder.de` via a request-specific upstream base URL override instead of the default configured upstream base URL.
 - Controller and e2e test coverage for PoliticalArea forwarding, including repeated `searchWords` query parameters and the alternate upstream host selection.
+- Admin-protected cache invalidation endpoint at `POST /internal/cache/invalidate` with `exact`, `prefix`, and `all` scopes plus optional `dryRun` preview support.
+- Structured audit logging and header-variant fingerprinting for cache invalidation actions, plus unit and e2e coverage for the new admin cache flows.
+- Operational documentation and Insomnia examples for proxy cache invalidation, alongside the archived OpenSpec change for the capability.
+
+### Changed
+
+- Proxy cache invalidation now uses production-safe Redis `SCAN` plus batched multi-key `DEL`, restricts deletions to `proxy:GET:*`, and supports broader-by-default `exact` matching with optional `strict=true`.
 
 ## 0.6.0
 
