@@ -8,15 +8,13 @@ services:
       restart_policy:
         condition: on-failure
       labels:
-        - "traefik.enable=true"
-        - "traefik.port=3000"
-        - "traefik.docker.network=public"
-        - "traefik.frontend.rule=Host:${PUBLIC_DOMAIN}"
-
-        # v3
-        - "traefik.http.routers.bus-api-bus-api.rule=Host(`${PUBLIC_DOMAIN}`)"
-        - "traefik.http.routers.bus-api-bus-api.tls=true"
-        - "traefik.http.services.bus-api-bus-api.loadbalancer.server.port=3000"
+        traefik.enable: 'true'
+        traefik.port: '3000'
+        traefik.docker.network: public
+        traefik.frontend.rule: Host:${PUBLIC_DOMAIN}
+        traefik.http.routers.bus-api-bus-api.rule: Host(`${PUBLIC_DOMAIN}`)
+        traefik.http.routers.bus-api-bus-api.tls: 'true'
+        traefik.http.services.bus-api-bus-api.loadbalancer.server.port: '3000'
 
   redis:
     deploy:
