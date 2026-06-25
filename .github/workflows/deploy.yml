@@ -140,7 +140,7 @@ jobs:
           fi
 
       - name: Setup quantum-cli (uses @v1 with username/password, @v2.0.0 for API-Key)
-        uses: hostwithquantum/setup-quantum-cli@v2
+        uses: hostwithquantum/setup-quantum-cli@v2.0.0
         with:
           api-key: ${{ secrets.QUANTUM_CLI }}
 
