@@ -92,10 +92,12 @@ Political area endpoints are exposed as dedicated proxy routes:
 
 ```bash
 curl "http://localhost:3000/api/v1/political-area/search?searchWords=Bad&searchWords=Bel*" \
-  -H "x-api-key: <client-api-key>"
+  -H "x-api-key: <client-api-key>" \
+  -H "x-federal-state: BB"
 
 curl "http://localhost:3000/api/v1/political-area/11111" \
-  -H "x-api-key: <client-api-key>"
+  -H "x-api-key: <client-api-key>" \
+  -H "x-federal-state: BB"
 ```
 
 Notes:
@@ -114,9 +116,9 @@ Notes:
   forwarding; the proxy adds only the selected server-owned upstream `api_key`.
 - The proxy forwards only allowlisted representation, content, authorization, user-agent, and
   custom trace headers.
-- `/api/v1/political-area/search` and `/api/v1/political-area/:id` are state-independent
-  exceptions: they require no `x-federal-state`, always use `https://gd-api.zfinder.de`, and
-  receive no Infodienste `api_key`.
+- `/api/v1/political-area/search` and `/api/v1/political-area/:id` always use
+  `https://gd-api.zfinder.de`, but still require `x-federal-state` so the proxy can send the
+  matching state-specific Infodienste `api_key`.
 - `/api/v1/political-area/search` preserves repeated `searchWords` parameters as repeated upstream query parameters.
 
 ### Proxy Caching
@@ -217,8 +219,8 @@ This operational checklist is separate from implementation completion:
 - Deploy to staging.
 - Smoke-test two configured states, using `BB` and `RP` when both are available, against
   `pstCategory/find`; verify each returns its own state content/data source.
-- Call both political-area routes without `x-federal-state`; verify success from the GD origin.
-- If the GD endpoint requires a credential, block production and revise the routing design.
+- Call both political-area routes with each configured `x-federal-state`; verify success from the
+  GD origin with the matching state-specific credential.
 
 ## Useful Scripts
 

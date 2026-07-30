@@ -100,17 +100,17 @@ origin and server-owned API key selected by its mandatory `x-federal-state` head
 - **WHEN** the selected upstream request fails due to timeout or network errors
 - **THEN** the proxy returns HTTP 502 with an error payload describing the failure
 
-#### Scenario: Political-area routes remain independent
+#### Scenario: Political-area routes use the selected state key
 
-- **WHEN** a client calls `/api/v1/political-area/search` or `/api/v1/political-area/{id}` without
-  `x-federal-state`
-- **THEN** the service uses `https://gd-api.zfinder.de` and sends no Infodienste `api_key`
+- **WHEN** a client calls `/api/v1/political-area/search` or `/api/v1/political-area/{id}` with a
+  configured `x-federal-state`
+- **THEN** the service uses `https://gd-api.zfinder.de` and sends the selected state's Infodienste
+  `api_key`
 
 ### Requirement: Proxy response caching
 
 The backend platform SHALL cache eligible GET proxy responses using Redis-backed stale-while-
-revalidate behavior and a required non-secret partition identifying the normalized state or
-external GD integration.
+revalidate behavior and a required non-secret partition identifying the normalized state.
 
 #### Scenario: Cache hit serves from Redis
 
@@ -220,4 +220,3 @@ HTTPS URL with a non-empty server-owned API key.
 - **WHEN** the configuration is malformed JSON, empty, contains an unknown code, has a malformed
   entry or empty key, or includes a non-HTTPS/non-origin URL
 - **THEN** startup fails without logging or returning any supplied API key
-

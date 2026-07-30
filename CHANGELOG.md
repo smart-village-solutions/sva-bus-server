@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## 0.7.2
 
 ### Added
 
@@ -14,8 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **BREAKING** Generic `/api/v1/**` requests now require a configured federal-state selector;
-  political-area routes remain state-independent and credential-free.
+- **BREAKING** All `/api/v1/**` requests now require a configured federal-state selector.
+- Political-area routes keep their fixed GD origin but now use the selected state's upstream key.
 - **BREAKING** Runtime configuration now uses the JSON secret `HTTP_CLIENT_STATE_UPSTREAMS` instead
   of the single global upstream origin and API key.
 - **BREAKING** Strict cache invalidation now selects a top-level `federalState` and no longer

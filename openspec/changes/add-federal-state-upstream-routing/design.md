@@ -11,7 +11,7 @@ so content cannot leak or collide across states.
   - select one configured origin/key pair for every generic Infodienste request;
   - reject ambiguous or unsupported requests before cache or upstream access;
   - keep upstream credentials server-owned and absent from cache identity and logs;
-  - preserve the independent political-area integration.
+  - preserve the fixed political-area origin while authenticating it with the selected state key.
 - Non-Goals:
   - infer a state from `areaId`, request bodies, or other content;
   - provide a default state or compatibility fallback;
@@ -40,9 +40,9 @@ so content cannot leak or collide across states.
    key. Audit text and logs likewise contain no raw key.
 7. A syntactically valid but unconfigured state returns HTTP 400 before cache lookup or upstream
    access, as do missing, blank, malformed, and unknown selectors.
-8. `/api/v1/political-area/search` and `/api/v1/political-area/:id` remain independent. They use
-   `https://gd-api.zfinder.de`, do not require `x-federal-state`, and receive no Infodienste key.
-   Staging confirmation that this endpoint needs no credential is a production release gate.
+8. `/api/v1/political-area/search` and `/api/v1/political-area/:id` use the fixed
+   `https://gd-api.zfinder.de` origin, but require `x-federal-state` and receive the selected
+   state's Infodienste key. Their cache entries use the same state partition as generic routes.
 9. The migration removes `HTTP_CLIENT_BASE_URL`, `HTTP_CLIENT_API_KEY`, default-state behavior,
    and caller-supplied upstream keys. There is no silent fallback.
 
@@ -90,11 +90,10 @@ This checklist is operational and separate from implementation completion:
 - Deploy to staging.
 - Smoke-test two configured states, using `BB` and `RP` when both are available, against
   `pstCategory/find`; verify each returns its own state content/data source.
-- Call both political-area routes without `x-federal-state`; verify success from the GD origin.
-- If the GD endpoint requires a credential, block production and revise this design before
-  rollout.
+- Call both political-area routes with each configured `x-federal-state`; verify success from the
+  GD origin using the matching state-specific key.
 
 ## Open Questions
 
-- None for implementation. The availability of configured states and the credential-free GD
-  assumption are release-time operational checks.
+- None for implementation. The availability of configured states remains a release-time
+  operational check.

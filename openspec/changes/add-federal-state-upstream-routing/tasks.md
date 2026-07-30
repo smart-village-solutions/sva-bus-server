@@ -10,7 +10,7 @@
 - [x] 2.2 Route with the selected origin and server-owned key while stripping caller credentials
       and the selector.
 - [x] 2.3 Require explicit origins in the HTTP client and preserve absolute-URL/origin protections.
-- [x] 2.4 Preserve selector-free, credential-free political-area routing through the GD origin.
+- [x] 2.4 Route political-area requests through the GD origin with the selected state's key.
 
 ## 3. Cache isolation and administration
 

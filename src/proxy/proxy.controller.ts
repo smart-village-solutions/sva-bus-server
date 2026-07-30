@@ -42,10 +42,14 @@ export class ProxyController {
   ): Promise<unknown> {
     const rawQuery = this.extractQueryString(request.url ?? '');
     const upstreamPath = rawQuery ? `/PoliticalArea/search?${rawQuery}` : '/PoliticalArea/search';
-    return this.forwardUpstreamPath('GET', upstreamPath, request, undefined, reply, {
-      baseUrlOverride: ProxyController.POLITICAL_AREA_BASE_URL,
-      cachePartition: 'external:gd',
-    });
+    return this.forwardUpstreamPath(
+      'GET',
+      upstreamPath,
+      request,
+      undefined,
+      reply,
+      this.resolveStateOptions(request, ProxyController.POLITICAL_AREA_BASE_URL),
+    );
   }
 
   @Get('political-area/:id')
@@ -60,10 +64,7 @@ export class ProxyController {
       request,
       undefined,
       reply,
-      {
-        baseUrlOverride: ProxyController.POLITICAL_AREA_BASE_URL,
-        cachePartition: 'external:gd',
-      },
+      this.resolveStateOptions(request, ProxyController.POLITICAL_AREA_BASE_URL),
     );
   }
 
@@ -96,12 +97,26 @@ export class ProxyController {
     const path = this.extractPath(request.url ?? '');
     const rawQuery = this.extractQueryString(request.url ?? '');
     const pathWithQuery = rawQuery ? `${path}?${rawQuery}` : path;
+    return this.forwardUpstreamPath(
+      method,
+      pathWithQuery,
+      request,
+      body,
+      reply,
+      this.resolveStateOptions(request),
+    );
+  }
+
+  private resolveStateOptions(
+    request: FastifyRequest,
+    baseUrlOverride?: string,
+  ): ProxyForwardOptions {
     const upstream = this.federalStateUpstreamService.resolve(request.headers['x-federal-state']);
-    return this.forwardUpstreamPath(method, pathWithQuery, request, body, reply, {
-      baseUrlOverride: upstream.baseUrl,
+    return {
+      baseUrlOverride: baseUrlOverride ?? upstream.baseUrl,
       cachePartition: `state:${upstream.federalState}`,
       headers: { api_key: upstream.apiKey },
-    });
+    };
   }
 
   private async forwardUpstreamPath(

@@ -18,9 +18,9 @@ content for clients requesting another state.
   `api_key` before forwarding, then add only the selected server-owned upstream key.
 - Partition proxy cache entries and strict cache invalidation by normalized federal-state code
   without including upstream secrets in cache keys.
-- Keep `/api/v1/political-area/search` and `/api/v1/political-area/:id` independent: they use the
-  fixed `https://gd-api.zfinder.de` origin, require no state selector, and receive no Infodienste
-  key.
+- Keep the fixed `https://gd-api.zfinder.de` origin for `/api/v1/political-area/search` and
+  `/api/v1/political-area/:id`, while requiring the selector and sending the selected state's
+  Infodienste key.
 - Coordinate deployment with a client release that sends the selector and replace the two legacy
   deployment secrets with the new JSON secret map.
 

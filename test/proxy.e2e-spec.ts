@@ -429,16 +429,14 @@ describe('Proxy endpoint (e2e)', () => {
   it('forwards PoliticalArea search requests with repeated searchWords parameters', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
-    const response = await injectProxy(
-      {
-        method: 'GET',
-        url: '/api/v1/political-area/search?searchWords=Bad&searchWords=Bel*',
-        headers: {
-          'x-request-id': 'political-area-search',
-        },
+    const response = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/political-area/search?searchWords=Bad&searchWords=Bel*',
+      headers: {
+        'x-federal-state': 'RP',
+        'x-request-id': 'political-area-search',
       },
-      { includeFederalState: false },
-    );
+    });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true });
@@ -448,7 +446,10 @@ describe('Proxy endpoint (e2e)', () => {
       undefined,
       expect.objectContaining({
         baseUrlOverride: 'https://gd-api.zfinder.de',
-        headers: expect.objectContaining({ 'x-request-id': 'political-area-search' }),
+        headers: expect.objectContaining({
+          api_key: 'rp-upstream-fixture',
+          'x-request-id': 'political-area-search',
+        }),
       }),
     );
   });
@@ -456,16 +457,14 @@ describe('Proxy endpoint (e2e)', () => {
   it('forwards PoliticalArea detail requests by id', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
-    const response = await injectProxy(
-      {
-        method: 'GET',
-        url: '/api/v1/political-area/11111',
-        headers: {
-          'x-request-id': 'political-area-detail',
-        },
+    const response = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/political-area/11111',
+      headers: {
+        'x-federal-state': 'BB',
+        'x-request-id': 'political-area-detail',
       },
-      { includeFederalState: false },
-    );
+    });
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true });
@@ -475,9 +474,25 @@ describe('Proxy endpoint (e2e)', () => {
       undefined,
       expect.objectContaining({
         baseUrlOverride: 'https://gd-api.zfinder.de',
-        headers: expect.objectContaining({ 'x-request-id': 'political-area-detail' }),
+        headers: expect.objectContaining({
+          api_key: 'bb-upstream-fixture',
+          'x-request-id': 'political-area-detail',
+        }),
       }),
     );
+  });
+
+  it('rejects PoliticalArea requests without a federal state', async () => {
+    const response = await injectProxy(
+      {
+        method: 'GET',
+        url: '/api/v1/political-area/11111',
+      },
+      { includeFederalState: false },
+    );
+
+    expect(response.statusCode).toBe(400);
+    expect(httpClientService.requestRaw).not.toHaveBeenCalled();
   });
 
   it('returns 401 when x-api-key is missing', async () => {

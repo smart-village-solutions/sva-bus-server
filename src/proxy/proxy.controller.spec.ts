@@ -121,39 +121,47 @@ describe('ProxyController', () => {
     },
   );
 
-  it('maps political-area search without state resolution or Infodienste key', async () => {
+  it('maps political-area search to GD with the selected state key', async () => {
     await controller.handlePoliticalAreaSearch(
       request('/api/v1/political-area/search?searchWords=Bad&searchWords=Bel*', {
+        'x-federal-state': 'RP',
         'x-request-id': 'req-1',
       }),
       reply(),
     );
 
-    expect(resolver.resolve).not.toHaveBeenCalled();
+    expect(resolver.resolve).toHaveBeenCalledWith('RP');
     expect(proxyService.forward).toHaveBeenCalledWith(
       'GET',
       '/PoliticalArea/search?searchWords=Bad&searchWords=Bel*',
       undefined,
       {
-        headers: { 'x-request-id': 'req-1' },
+        headers: { api_key: 'rp-fixture-key', 'x-request-id': 'req-1' },
         baseUrlOverride: 'https://gd-api.zfinder.de',
-        cachePartition: 'external:gd',
+        cachePartition: 'state:RP',
       },
     );
   });
 
-  it('maps political-area detail without a selector', async () => {
+  it('maps political-area detail to GD with the selected state key', async () => {
     await controller.handlePoliticalAreaById(
       '11111',
-      request('/api/v1/political-area/11111'),
+      request('/api/v1/political-area/11111', { 'x-federal-state': 'BB' }),
       reply(),
     );
 
-    expect(resolver.resolve).not.toHaveBeenCalled();
+    expect(resolver.resolve).toHaveBeenCalledWith('BB');
     expect(proxyService.forward).toHaveBeenCalledWith('GET', '/PoliticalArea/11111', undefined, {
-      headers: undefined,
+      headers: { api_key: 'bb-fixture-key' },
       baseUrlOverride: 'https://gd-api.zfinder.de',
-      cachePartition: 'external:gd',
+      cachePartition: 'state:BB',
     });
+  });
+
+  it('rejects political-area requests without a state selector', async () => {
+    await expect(
+      controller.handlePoliticalAreaById('11111', request('/api/v1/political-area/11111'), reply()),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(proxyService.forward).not.toHaveBeenCalled();
   });
 });
