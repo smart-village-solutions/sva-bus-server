@@ -7,8 +7,8 @@ import type { HttpClientRawResponse, HttpRequestOptions } from '../http-client/h
 import { HttpClientService } from '../http-client/http-client.service';
 import { hashKeyForLogging } from '../utils/hash';
 import { parseBoolean } from '../utils/parse-boolean';
-import { buildProxyCacheKey, deriveProxyCachePolicy, shouldBypassProxyCache } from './proxy-cache';
 import type { CachePartition } from './proxy-cache';
+import { buildProxyCacheKey, deriveProxyCachePolicy, shouldBypassProxyCache } from './proxy-cache';
 
 export type ProxyForwardOptions = HttpRequestOptions & {
   cachePartition: CachePartition;

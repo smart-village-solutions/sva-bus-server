@@ -1,9 +1,9 @@
 import { ServiceUnavailableException } from '@nestjs/common';
 
+import { FederalStateUpstreamService } from '../config/federal-state-upstream.service';
 import { buildProxyCacheKey } from '../proxy/proxy-cache';
 import { CacheService } from './cache.service';
 import { CacheAdminService } from './cache-admin.service';
-import { FederalStateUpstreamService } from '../config/federal-state-upstream.service';
 
 type MockRedisClient = {
   scan: jest.Mock;

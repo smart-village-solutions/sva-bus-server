@@ -1,5 +1,5 @@
-import type { HttpClientRawResponse } from '../http-client/http-client.service';
 import type { FederalStateCode } from '../config/state-upstreams';
+import type { HttpClientRawResponse } from '../http-client/http-client.service';
 
 export type CachePartition = `state:${FederalStateCode}` | 'external:gd';
 

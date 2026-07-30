@@ -1,6 +1,6 @@
 import { BadRequestException, CanActivate } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyRequest } from 'fastify';
 
 import { ProxyAccessGuard } from '../api-keys/proxy-access.guard';
 import { FederalStateUpstreamService } from '../config/federal-state-upstream.service';
