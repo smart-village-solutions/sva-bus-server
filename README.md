@@ -26,8 +26,9 @@ cp .env.example .env
 
 ### Required settings
 
-- `HTTP_CLIENT_BASE_URL`: Base URL for upstream API calls
-- `HTTP_CLIENT_BASE_URL` must be origin-only (no path segment), so `/api/v1/*` maps 1:1 to upstream paths
+- `HTTP_CLIENT_STATE_UPSTREAMS`: Non-empty JSON object mapping configured federal-state codes to
+  exactly one origin-only HTTPS `baseUrl` and non-empty server-owned `apiKey`. The configured keys
+  are the supported states for this deployment.
 - `HTTP_CLIENT_TIMEOUT`: Request timeout in milliseconds
 - `HTTP_CLIENT_RETRIES`: Retry attempts for upstream calls
 - `CACHE_REDIS_URL`: Redis connection string
@@ -36,7 +37,6 @@ cp .env.example .env
 
 ### Optional settings
 
-- `HTTP_CLIENT_API_KEY`: API key sent as `api_key` header to the upstream API when the client does not provide one
 - `PROXY_BODY_LIMIT`: Max JSON body size in bytes (default: 1048576)
 - `CACHE_IGNORE_UPSTREAM_CONTROL`: Ignore upstream `cache-control` directives and use local TTLs (default: false)
 - `CACHE_BYPASS_PATHS`: Comma-separated list of path prefixes that should never be cached (default: empty)
@@ -62,15 +62,20 @@ curl http://localhost:3000/health/cache
 
 ## Proxy Endpoints
 
-Proxy requests to the upstream API via `/api/v1` (forwards allowlisted headers and automatically adds `api_key` header if configured):
+Proxy requests to Infodienste via `/api/v1` select a matched upstream origin and server-owned key
+using the mandatory `x-federal-state` header:
 
 Versioning applies only to proxied upstream requests; service health endpoints remain unversioned.
 
-The upstream base URL must be origin-only (no path segment) so proxy routes can map directly to upstream paths.
+Recognized codes are `BB`, `BE`, `BW`, `BY`, `HB`, `HE`, `HH`, `MV`, `NI`, `NW`, `RP`, `SH`,
+`SL`, `SN`, `ST`, and `TH`. Values are case-insensitive, but only codes present in
+`HTTP_CLIENT_STATE_UPSTREAMS` are supported by a deployment. Missing, unknown, or known but
+unconfigured selectors return HTTP 400 before cache or upstream access.
 
 ```bash
 curl "http://localhost:3000/api/v1/test?foo=bar" \
-  -H "x-api-key: <client-api-key>"
+  -H "x-api-key: <client-api-key>" \
+  -H "x-federal-state: BB"
 ```
 
 POST requests forward JSON bodies:
@@ -78,6 +83,7 @@ POST requests forward JSON bodies:
 ```bash
 curl -X POST "http://localhost:3000/api/v1/example" \
   -H "x-api-key: <client-api-key>" \
+  -H "x-federal-state: RP" \
   -H "content-type: application/json" \
   -d '{"key":"value"}'
 ```
@@ -95,22 +101,29 @@ curl "http://localhost:3000/api/v1/political-area/11111" \
 Notes:
 
 - `/api/v1/**` requires a valid client API key via `x-api-key`.
+- Generic `/api/v1/**` Infodienste requests also require a configured `x-federal-state`.
 - API keys are stored in Redis (hashed) and validated before proxying.
 - Rate limiting is enforced per API key and backed by Redis counters.
 - The same rate-limit settings also apply to pre-auth and admin endpoints.
 - If Redis is unavailable, `/api/v1/**` returns 503 because API key validation cannot be performed (fail-closed).
 - Admin operations for API keys are exposed under `/internal/api-keys` and protected with `Authorization: Bearer <ADMIN_API_TOKEN>`.
 - Admin cache invalidation is exposed under `/internal/cache/invalidate` and protected with `Authorization: Bearer <ADMIN_API_TOKEN>`.
-- The proxy injects the upstream `api_key` only when the client does not already provide one.
-- The proxy forwards only allowlisted headers (`accept`, `accept-encoding`, `accept-language`, `authorization`, `content-type`, `user-agent`, `api_key`, and `x-*`).
-- `x-api-key` is never forwarded to upstream.
-- `/api/v1/political-area/search` and `/api/v1/political-area/:id` are exceptions to `HTTP_CLIENT_BASE_URL` and are always forwarded to `https://gd-api.zfinder.de`.
+- `x-api-key` authenticates the caller with this proxy and is distinct from hidden,
+  state-specific Infodienste credentials.
+- Caller-supplied `x-api-key`, `api_key`, and `x-federal-state` headers are stripped before
+  forwarding; the proxy adds only the selected server-owned upstream `api_key`.
+- The proxy forwards only allowlisted representation, content, authorization, user-agent, and
+  custom trace headers.
+- `/api/v1/political-area/search` and `/api/v1/political-area/:id` are state-independent
+  exceptions: they require no `x-federal-state`, always use `https://gd-api.zfinder.de`, and
+  receive no Infodienste `api_key`.
 - `/api/v1/political-area/search` preserves repeated `searchWords` parameters as repeated upstream query parameters.
 
 ### Proxy Caching
 
 GET responses are cached in Redis using cache-aside with stale-while-revalidate. The proxy honors upstream
 `cache-control` headers when deciding whether to cache and for how long.
+Cache identity includes the normalized federal-state partition and never an upstream API key.
 
 Caching rules:
 
@@ -137,14 +150,28 @@ curl -X POST "http://localhost:3000/internal/cache/invalidate" \
 
 Supported scopes:
 
-- `exact`: invalidate one path/query target (`strict=false` default invalidates all variants for that path)
-- `prefix`: invalidate all keys under a path prefix (`pathPrefix`)
+- `exact`: invalidate one path/query target (`strict=false` default invalidates all state and
+  representation variants for that path)
+- `prefix`: invalidate all keys under a path prefix (`pathPrefix`) across configured states
 - `all`: invalidate all proxy GET cache keys
 
 Optional fields:
 
 - `dryRun: true`: only report `matched`, do not delete keys
-- `strict: true` + `headers` on `exact`: invalidate exactly one variant by key-shaping headers (`accept`, `acceptLanguage`, `apiKey`)
+- `strict: true` + top-level `federalState` on `exact`: invalidate exactly one configured state
+  and representation variant. Optional `headers` may contain `accept` and `acceptLanguage`;
+  upstream API keys are not accepted.
+
+Strict example:
+
+```bash
+curl -X POST "http://localhost:3000/internal/cache/invalidate" \
+  -H "authorization: Bearer <ADMIN_API_TOKEN>" \
+  -H "content-type: application/json" \
+  -d '{"scope":"exact","path":"/pst/find?areaId=10790","strict":true,"federalState":"BB","headers":{"accept":"application/json","acceptLanguage":"de-DE"}}'
+```
+
+Non-strict exact and prefix invalidations intentionally span all configured state partitions.
 
 Response shape:
 
@@ -180,6 +207,18 @@ export class ExampleService {
 
 - Redis is the primary cache backend. When Redis is unavailable, the service stays up and cache operations become no-ops (pass-through to the upstream API).
 - `/health/cache` reports `degraded` when Redis is unreachable, so monitoring can detect outages.
+
+### Release Checklist
+
+This operational checklist is separate from implementation completion:
+
+- Coordinate a mobile-client release that sends `x-federal-state` on every generic request.
+- Configure exactly the available states and credentials in the deployment secret store.
+- Deploy to staging.
+- Smoke-test two configured states, using `BB` and `RP` when both are available, against
+  `pstCategory/find`; verify each returns its own state content/data source.
+- Call both political-area routes without `x-federal-state`; verify success from the GD origin.
+- If the GD endpoint requires a credential, block production and revise the routing design.
 
 ## Useful Scripts
 

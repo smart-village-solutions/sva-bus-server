@@ -85,8 +85,7 @@ jobs:
           IMAGE_REF: ${{ needs.preflight.outputs.image_ref }}
           PUBLIC_DOMAIN: ${{ vars.PUBLIC_DOMAIN }}
           QUANTUM_NODE: ${{ vars.QUANTUM_NODE }}
-          HTTP_CLIENT_BASE_URL: ${{ secrets.HTTP_CLIENT_BASE_URL }}
-          HTTP_CLIENT_API_KEY: ${{ secrets.HTTP_CLIENT_API_KEY }}
+          HTTP_CLIENT_STATE_UPSTREAMS: ${{ secrets.HTTP_CLIENT_STATE_UPSTREAMS }}
           ADMIN_API_TOKEN: ${{ secrets.ADMIN_API_TOKEN }}
           LOG_LEVEL: ${{ vars.LOG_LEVEL }}
           HTTP_CLIENT_TIMEOUT: ${{ vars.HTTP_CLIENT_TIMEOUT }}
@@ -108,16 +107,15 @@ jobs:
             exit 1
           fi
 
-          if [ -z "$HTTP_CLIENT_BASE_URL" ]; then
-            echo "HTTP_CLIENT_BASE_URL is required"
+          if [ -z "$HTTP_CLIENT_STATE_UPSTREAMS" ]; then
+            echo "HTTP_CLIENT_STATE_UPSTREAMS is required"
             exit 1
           fi
 
           IMAGE_REF="$IMAGE_REF" \
           PUBLIC_DOMAIN="$PUBLIC_DOMAIN" \
           QUANTUM_NODE="$QUANTUM_NODE" \
-          HTTP_CLIENT_BASE_URL="$HTTP_CLIENT_BASE_URL" \
-          HTTP_CLIENT_API_KEY="$HTTP_CLIENT_API_KEY" \
+          HTTP_CLIENT_STATE_UPSTREAMS="$HTTP_CLIENT_STATE_UPSTREAMS" \
           ADMIN_API_TOKEN="$ADMIN_API_TOKEN" \
           LOG_LEVEL="${LOG_LEVEL:-info}" \
           HTTP_CLIENT_TIMEOUT="${HTTP_CLIENT_TIMEOUT:-10000}" \
