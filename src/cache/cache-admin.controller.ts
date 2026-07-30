@@ -271,9 +271,7 @@ export class CacheAdminController {
     const pathPrefix = typeof body?.pathPrefix === 'string' ? body.pathPrefix.trim() : undefined;
     const strict = typeof body?.strict === 'boolean' ? body.strict : undefined;
     const federalState =
-      typeof body?.federalState === 'string'
-        ? body.federalState.trim().toUpperCase()
-        : undefined;
+      typeof body?.federalState === 'string' ? body.federalState.trim().toUpperCase() : undefined;
     const headerVariantFingerprint = this.computeHeaderVariantFingerprint(
       this.readStrictHeaders(body),
       federalState,

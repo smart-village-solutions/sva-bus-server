@@ -96,9 +96,7 @@ export class ProxyController {
     const path = this.extractPath(request.url ?? '');
     const rawQuery = this.extractQueryString(request.url ?? '');
     const pathWithQuery = rawQuery ? `${path}?${rawQuery}` : path;
-    const upstream = this.federalStateUpstreamService.resolve(
-      request.headers['x-federal-state'],
-    );
+    const upstream = this.federalStateUpstreamService.resolve(request.headers['x-federal-state']);
     return this.forwardUpstreamPath(method, pathWithQuery, request, body, reply, {
       baseUrlOverride: upstream.baseUrl,
       cachePartition: `state:${upstream.federalState}`,

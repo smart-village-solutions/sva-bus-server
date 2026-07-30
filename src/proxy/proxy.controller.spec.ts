@@ -74,19 +74,14 @@ describe('ProxyController', () => {
       reply(),
     );
 
-    expect(proxyService.forward).toHaveBeenCalledWith(
-      'GET',
-      '/pstCategory/find',
-      undefined,
-      {
-        baseUrlOverride: `https://${normalized.toLowerCase()}.example.test`,
-        cachePartition: `state:${normalized}`,
-        headers: {
-          api_key: `${normalized.toLowerCase()}-fixture-key`,
-          'x-request-id': 'request-1',
-        },
+    expect(proxyService.forward).toHaveBeenCalledWith('GET', '/pstCategory/find', undefined, {
+      baseUrlOverride: `https://${normalized.toLowerCase()}.example.test`,
+      cachePartition: `state:${normalized}`,
+      headers: {
+        api_key: `${normalized.toLowerCase()}-fixture-key`,
+        'x-request-id': 'request-1',
       },
-    );
+    });
   });
 
   it('routes POST using the selected state', async () => {
@@ -155,15 +150,10 @@ describe('ProxyController', () => {
     );
 
     expect(resolver.resolve).not.toHaveBeenCalled();
-    expect(proxyService.forward).toHaveBeenCalledWith(
-      'GET',
-      '/PoliticalArea/11111',
-      undefined,
-      {
-        headers: undefined,
-        baseUrlOverride: 'https://gd-api.zfinder.de',
-        cachePartition: 'external:gd',
-      },
-    );
+    expect(proxyService.forward).toHaveBeenCalledWith('GET', '/PoliticalArea/11111', undefined, {
+      headers: undefined,
+      baseUrlOverride: 'https://gd-api.zfinder.de',
+      cachePartition: 'external:gd',
+    });
   });
 });

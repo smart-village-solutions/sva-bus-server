@@ -99,7 +99,12 @@ export class ProxyService {
     const cached = await this.cacheService.wrapCacheable<HttpClientRawResponse<T>>(
       cacheKey,
       async () => {
-        const response = await this.httpClientService.requestRaw<T>(method, path, body, httpOptions);
+        const response = await this.httpClientService.requestRaw<T>(
+          method,
+          path,
+          body,
+          httpOptions,
+        );
         const policy = deriveProxyCachePolicy(response, {
           ignoreUpstreamControl: this.ignoreUpstreamControl,
         });

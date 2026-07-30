@@ -419,7 +419,9 @@ describe('Proxy endpoint (e2e)', () => {
     });
 
     const callOptions = httpClientService.requestRaw.mock.calls[0]?.[3];
-    expect(callOptions.headers).toEqual(expect.objectContaining({ api_key: 'bb-upstream-fixture' }));
+    expect(callOptions.headers).toEqual(
+      expect.objectContaining({ api_key: 'bb-upstream-fixture' }),
+    );
     expect(callOptions.headers).not.toHaveProperty('x-federal-state');
     expect(callOptions.headers).not.toHaveProperty('x-api-key');
   });

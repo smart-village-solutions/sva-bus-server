@@ -46,4 +46,3 @@ export class FederalStateUpstreamService {
     return Object.freeze({ federalState, baseUrl: upstream.baseUrl, apiKey: upstream.apiKey });
   }
 }
-

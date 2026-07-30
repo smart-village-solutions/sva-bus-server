@@ -29,10 +29,7 @@ describe('parseStateUpstreams', () => {
     ['lowercase code', JSON.stringify({ bb: entry('BB') })],
     ['non-object entry', JSON.stringify({ BB: 'invalid' })],
     ['missing field', JSON.stringify({ BB: { baseUrl: 'https://bb.example.test' } })],
-    [
-      'extra field',
-      JSON.stringify({ BB: { ...entry('BB'), unexpected: 'value' } }),
-    ],
+    ['extra field', JSON.stringify({ BB: { ...entry('BB'), unexpected: 'value' } })],
     ['empty key', JSON.stringify({ BB: { ...entry('BB'), apiKey: '   ' } })],
     ['non-string key', JSON.stringify({ BB: { ...entry('BB'), apiKey: 123 } })],
     ['invalid URL', JSON.stringify({ BB: { ...entry('BB'), baseUrl: 'not-a-url' } })],
@@ -68,4 +65,3 @@ describe('parseStateUpstreams', () => {
     );
   });
 });
-

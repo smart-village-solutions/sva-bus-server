@@ -56,9 +56,9 @@ describe('HttpClientService', () => {
       text: async () => JSON.stringify({ ok: true }),
     });
 
-    await expect(
-      service.get('/test', { baseUrlOverride: 'https://example.com' }),
-    ).resolves.toEqual({ ok: true });
+    await expect(service.get('/test', { baseUrlOverride: 'https://example.com' })).resolves.toEqual(
+      { ok: true },
+    );
     expect(mockedFetch).toHaveBeenCalledTimes(2);
   });
 
@@ -88,9 +88,9 @@ describe('HttpClientService', () => {
       text: async () => 'plain-text',
     });
 
-    await expect(
-      service.get('/text', { baseUrlOverride: 'https://example.com' }),
-    ).resolves.toEqual('plain-text');
+    await expect(service.get('/text', { baseUrlOverride: 'https://example.com' })).resolves.toEqual(
+      'plain-text',
+    );
   });
 
   it('returns raw responses for non-2xx status codes', async () => {
@@ -185,10 +185,15 @@ describe('HttpClientService', () => {
     mockedFetch.mockRejectedValueOnce(new Error('boom'));
 
     await expect(
-      service.requestRaw('POST', '/retry', { ok: true }, {
-        baseUrlOverride: 'https://example.com',
-        retries: 2,
-      }),
+      service.requestRaw(
+        'POST',
+        '/retry',
+        { ok: true },
+        {
+          baseUrlOverride: 'https://example.com',
+          retries: 2,
+        },
+      ),
     ).rejects.toThrow('boom');
     expect(mockedFetch).toHaveBeenCalledTimes(1);
   });
@@ -238,9 +243,7 @@ describe('HttpClientService', () => {
 
     await expect(
       localService.get('/test', { baseUrlOverride: 'https://example.com/base/' }),
-    ).rejects.toThrow(
-      'HTTP client base URL must not include a path',
-    );
+    ).rejects.toThrow('HTTP client base URL must not include a path');
     expect(mockedFetch).not.toHaveBeenCalled();
   });
 

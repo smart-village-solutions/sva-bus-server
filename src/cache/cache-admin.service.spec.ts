@@ -77,19 +77,22 @@ describe('CacheAdminService', () => {
       getStoreClient: jest.fn().mockReturnValue(redisClient),
     };
 
-    service = new CacheAdminService(cacheService as unknown as CacheService, {
-      resolve: jest.fn((value: unknown) => {
-        if (typeof value !== 'string' || !['BB', 'RP'].includes(value.toUpperCase())) {
-          throw new Error('unsupported');
-        }
-        const federalState = value.toUpperCase() as 'BB' | 'RP';
-        return {
-          federalState,
-          baseUrl: `https://${federalState.toLowerCase()}.example.test`,
-          apiKey: 'fixture-key',
-        };
-      }),
-    } as unknown as FederalStateUpstreamService);
+    service = new CacheAdminService(
+      cacheService as unknown as CacheService,
+      {
+        resolve: jest.fn((value: unknown) => {
+          if (typeof value !== 'string' || !['BB', 'RP'].includes(value.toUpperCase())) {
+            throw new Error('unsupported');
+          }
+          const federalState = value.toUpperCase() as 'BB' | 'RP';
+          return {
+            federalState,
+            baseUrl: `https://${federalState.toLowerCase()}.example.test`,
+            apiKey: 'fixture-key',
+          };
+        }),
+      } as unknown as FederalStateUpstreamService,
+    );
   });
 
   it('invalidates all variants for exact path by default', async () => {

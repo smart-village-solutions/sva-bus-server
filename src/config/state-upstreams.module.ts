@@ -7,4 +7,3 @@ import { FederalStateUpstreamService } from './federal-state-upstream.service';
   exports: [FederalStateUpstreamService],
 })
 export class StateUpstreamsModule {}
-

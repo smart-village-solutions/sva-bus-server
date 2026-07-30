@@ -109,16 +109,13 @@ describe('CacheAdminController', () => {
       deleted: 1,
     });
 
-    await controller.invalidate(
-      { headers: {}, ip: '127.0.0.1' } as never,
-      {
-        scope: 'exact',
-        path: '/pst/find',
-        strict: true,
-        federalState: 'bb',
-        headers: { accept: 'application/json' },
-      },
-    );
+    await controller.invalidate({ headers: {}, ip: '127.0.0.1' } as never, {
+      scope: 'exact',
+      path: '/pst/find',
+      strict: true,
+      federalState: 'bb',
+      headers: { accept: 'application/json' },
+    });
 
     expect(cacheAdminService.invalidate).toHaveBeenCalledWith({
       scope: 'exact',
@@ -132,16 +129,13 @@ describe('CacheAdminController', () => {
 
   it('rejects legacy headers.apiKey', async () => {
     await expect(
-      controller.invalidate(
-        { headers: {}, ip: '127.0.0.1' } as never,
-        {
-          scope: 'exact',
-          path: '/pst/find',
-          strict: true,
-          federalState: 'BB',
-          headers: { apiKey: 'legacy' },
-        },
-      ),
+      controller.invalidate({ headers: {}, ip: '127.0.0.1' } as never, {
+        scope: 'exact',
+        path: '/pst/find',
+        strict: true,
+        federalState: 'BB',
+        headers: { apiKey: 'legacy' },
+      }),
     ).rejects.toMatchObject({ status: 400 });
     expect(cacheAdminService.invalidate).not.toHaveBeenCalled();
   });

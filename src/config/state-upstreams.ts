@@ -54,11 +54,7 @@ export function parseStateUpstreams(value: unknown): StateUpstreams {
     }
 
     const entryKeys = Object.keys(entry);
-    if (
-      entryKeys.length !== 2 ||
-      !entryKeys.includes('baseUrl') ||
-      !entryKeys.includes('apiKey')
-    ) {
+    if (entryKeys.length !== 2 || !entryKeys.includes('baseUrl') || !entryKeys.includes('apiKey')) {
       throw new Error(
         `HTTP_CLIENT_STATE_UPSTREAMS entry ${code} must contain exactly baseUrl and apiKey`,
       );
@@ -110,4 +106,3 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
 }
-
