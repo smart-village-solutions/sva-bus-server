@@ -109,6 +109,20 @@ describe('ProxyController', () => {
     );
   });
 
+  it('does not forward accept-encoding because undici decodes upstream responses', async () => {
+    await controller.handleGet(
+      request('/api/v1/pst/find', {
+        'x-federal-state': 'BB',
+        'accept-encoding': 'gzip, br',
+      }),
+      reply(),
+    );
+
+    const forwardOptions = proxyService.forward.mock.calls[0]?.[3];
+    expect(forwardOptions.headers).toEqual({ api_key: 'bb-fixture-key' });
+    expect(forwardOptions.headers).not.toHaveProperty('accept-encoding');
+  });
+
   it.each([undefined, 'XX', 'BE'])(
     'rejects invalid selector %p before proxy access',
     async (selector) => {

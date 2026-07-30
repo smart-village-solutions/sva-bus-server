@@ -267,7 +267,6 @@ export class ProxyController {
 
     const allowlistedHeaders = new Set([
       'accept',
-      'accept-encoding',
       'accept-language',
       'authorization',
       'content-type',

@@ -126,7 +126,7 @@ describe('HttpClientService', () => {
     });
   });
 
-  it('forwards upstream diagnostic headers in raw responses', async () => {
+  it('forwards upstream diagnostic headers but strips content-encoding after decoding', async () => {
     mockedFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
@@ -135,6 +135,7 @@ describe('HttpClientService', () => {
           if (name === 'content-type') return 'application/json';
           if (name === 'datasource') return 'Rheinland-Pfalz (InfoServiceDataSource)';
           if (name === 'total-item-count') return '1';
+          if (name === 'content-encoding') return 'gzip';
           return null;
         },
       },

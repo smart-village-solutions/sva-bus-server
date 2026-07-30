@@ -116,6 +116,8 @@ Notes:
   forwarding; the proxy adds only the selected server-owned upstream `api_key`.
 - The proxy forwards only allowlisted representation, content, authorization, user-agent, and
   custom trace headers.
+- The proxy handles upstream decompression itself and therefore does not forward `accept-encoding`
+  or return stale `content-encoding` metadata.
 - `/api/v1/political-area/search` and `/api/v1/political-area/:id` always use
   `https://gd-api.zfinder.de`, but still require `x-federal-state` so the proxy can send the
   matching state-specific Infodienste `api_key`.

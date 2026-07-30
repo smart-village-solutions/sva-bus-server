@@ -396,7 +396,6 @@ export class HttpClientService implements OnModuleDestroy {
       'vary',
       'datasource',
       'total-item-count',
-      'content-encoding',
       'content-language',
       'content-disposition',
     ];
