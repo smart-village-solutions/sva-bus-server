@@ -3,6 +3,7 @@ import { ServiceUnavailableException } from '@nestjs/common';
 import { buildProxyCacheKey } from '../proxy/proxy-cache';
 import { CacheService } from './cache.service';
 import { CacheAdminService } from './cache-admin.service';
+import { FederalStateUpstreamService } from '../config/federal-state-upstream.service';
 
 type MockRedisClient = {
   scan: jest.Mock;
@@ -76,7 +77,19 @@ describe('CacheAdminService', () => {
       getStoreClient: jest.fn().mockReturnValue(redisClient),
     };
 
-    service = new CacheAdminService(cacheService as unknown as CacheService);
+    service = new CacheAdminService(cacheService as unknown as CacheService, {
+      resolve: jest.fn((value: unknown) => {
+        if (typeof value !== 'string' || !['BB', 'RP'].includes(value.toUpperCase())) {
+          throw new Error('unsupported');
+        }
+        const federalState = value.toUpperCase() as 'BB' | 'RP';
+        return {
+          federalState,
+          baseUrl: `https://${federalState.toLowerCase()}.example.test`,
+          apiKey: 'fixture-key',
+        };
+      }),
+    } as unknown as FederalStateUpstreamService);
   });
 
   it('invalidates all variants for exact path by default', async () => {
@@ -100,15 +113,13 @@ describe('CacheAdminService', () => {
   });
 
   it('invalidates only strict cache key when strict=true', async () => {
-    const targetKey = buildProxyCacheKey('GET', '/pst/find?areaId=10790', {
+    const targetKey = buildProxyCacheKey('GET', '/pst/find?areaId=10790', 'state:BB', {
       accept: '*/*',
       'accept-language': 'de-DE',
-      api_key: 'client-A',
     });
-    const otherVariant = buildProxyCacheKey('GET', '/pst/find?areaId=10790', {
+    const otherVariant = buildProxyCacheKey('GET', '/pst/find?areaId=10790', 'state:RP', {
       accept: '*/*',
       'accept-language': 'en-US',
-      api_key: 'client-A',
     });
 
     redisKeys.add(targetKey);
@@ -119,10 +130,10 @@ describe('CacheAdminService', () => {
         scope: 'exact',
         path: '/pst/find?areaId=10790',
         strict: true,
+        federalState: 'bb',
         headers: {
           accept: '*/*',
           acceptLanguage: 'de-DE',
-          apiKey: 'client-A',
         },
       }),
     ).resolves.toEqual({
@@ -142,11 +153,11 @@ describe('CacheAdminService', () => {
         scope: 'exact',
         path: '/pst/find?areaId=99999',
         strict: true,
+        federalState: 'BB',
         dryRun: true,
         headers: {
           accept: '*/*',
           acceptLanguage: 'de-DE',
-          apiKey: 'missing-client',
         },
       }),
     ).resolves.toEqual({
@@ -163,10 +174,10 @@ describe('CacheAdminService', () => {
         scope: 'exact',
         path: '/pst/find?areaId=99999',
         strict: true,
+        federalState: 'BB',
         headers: {
           accept: '*/*',
           acceptLanguage: 'de-DE',
-          apiKey: 'missing-client',
         },
       }),
     ).resolves.toEqual({

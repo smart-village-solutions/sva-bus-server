@@ -22,6 +22,7 @@ type InvalidateBody = {
   dryRun?: unknown;
   path?: unknown;
   strict?: unknown;
+  federalState?: unknown;
   headers?: unknown;
   pathPrefix?: unknown;
 };
@@ -29,7 +30,6 @@ type InvalidateBody = {
 type StrictHeadersBody = {
   accept?: unknown;
   acceptLanguage?: unknown;
-  apiKey?: unknown;
 };
 
 type RequestWithAdminIdentity = FastifyRequest & {
@@ -92,12 +92,16 @@ export class CacheAdminController {
 
     const path = this.parseRequiredString(body?.path, 'path');
     const strict = this.parseOptionalBoolean(body?.strict, 'strict') ?? false;
+    const federalState = strict
+      ? this.parseRequiredString(body?.federalState, 'federalState')
+      : undefined;
     const headers = this.parseStrictHeaders(body?.headers);
 
     return {
       scope,
       path,
       strict,
+      federalState,
       headers,
       dryRun,
     };
@@ -128,7 +132,6 @@ export class CacheAdminController {
     | {
         accept?: string;
         acceptLanguage?: string;
-        apiKey?: string;
       }
     | undefined {
     if (value === undefined || value === null) {
@@ -140,11 +143,13 @@ export class CacheAdminController {
     }
 
     const payload = value as StrictHeadersBody;
+    if ('apiKey' in payload) {
+      throw new BadRequestException('headers.apiKey is not accepted');
+    }
 
     return {
       accept: this.parseOptionalString(payload.accept, 'headers.accept'),
       acceptLanguage: this.parseOptionalString(payload.acceptLanguage, 'headers.acceptLanguage'),
-      apiKey: this.parseOptionalString(payload.apiKey, 'headers.apiKey'),
     };
   }
 
@@ -183,6 +188,7 @@ export class CacheAdminController {
       path?: string;
       pathPrefix?: string;
       strict?: boolean;
+      federalState?: string;
       headerVariantFingerprint?: string;
     },
     result: 'ok' | 'error',
@@ -201,6 +207,7 @@ export class CacheAdminController {
       path: input.path ?? null,
       pathPrefix: input.pathPrefix ?? null,
       strict: input.strict ?? null,
+      federalState: input.federalState ?? null,
       headerVariantFingerprint: input.headerVariantFingerprint ?? null,
       result,
       adminIdentity: request.adminIdentity ?? 'unknown',
@@ -229,13 +236,18 @@ export class CacheAdminController {
     path?: string;
     pathPrefix?: string;
     strict?: boolean;
+    federalState?: string;
     headerVariantFingerprint?: string;
   } {
     if (input.scope === 'exact') {
       return {
         path: input.path,
         strict: input.strict ?? false,
-        headerVariantFingerprint: this.computeHeaderVariantFingerprint(input.headers),
+        federalState: input.federalState?.trim().toUpperCase(),
+        headerVariantFingerprint: this.computeHeaderVariantFingerprint(
+          input.headers,
+          input.federalState,
+        ),
       };
     }
 
@@ -252,26 +264,33 @@ export class CacheAdminController {
     path?: string;
     pathPrefix?: string;
     strict?: boolean;
+    federalState?: string;
     headerVariantFingerprint?: string;
   } {
     const path = typeof body?.path === 'string' ? body.path.trim() : undefined;
     const pathPrefix = typeof body?.pathPrefix === 'string' ? body.pathPrefix.trim() : undefined;
     const strict = typeof body?.strict === 'boolean' ? body.strict : undefined;
+    const federalState =
+      typeof body?.federalState === 'string'
+        ? body.federalState.trim().toUpperCase()
+        : undefined;
     const headerVariantFingerprint = this.computeHeaderVariantFingerprint(
       this.readStrictHeaders(body),
+      federalState,
     );
 
     return {
       path: path && path.length > 0 ? path : undefined,
       pathPrefix: pathPrefix && pathPrefix.length > 0 ? pathPrefix : undefined,
       strict,
+      federalState: federalState && federalState.length > 0 ? federalState : undefined,
       headerVariantFingerprint,
     };
   }
 
   private readStrictHeaders(
     body: InvalidateBody | undefined,
-  ): { accept?: string; acceptLanguage?: string; apiKey?: string } | undefined {
+  ): { accept?: string; acceptLanguage?: string } | undefined {
     if (
       !body ||
       typeof body.headers !== 'object' ||
@@ -285,12 +304,10 @@ export class CacheAdminController {
     const accept = typeof payload.accept === 'string' ? payload.accept.trim() : undefined;
     const acceptLanguage =
       typeof payload.acceptLanguage === 'string' ? payload.acceptLanguage.trim() : undefined;
-    const apiKey = typeof payload.apiKey === 'string' ? payload.apiKey.trim() : undefined;
 
     return {
       accept: accept && accept.length > 0 ? accept : undefined,
       acceptLanguage: acceptLanguage && acceptLanguage.length > 0 ? acceptLanguage : undefined,
-      apiKey: apiKey && apiKey.length > 0 ? apiKey : undefined,
     };
   }
 
@@ -299,24 +316,24 @@ export class CacheAdminController {
       | {
           accept?: string;
           acceptLanguage?: string;
-          apiKey?: string;
         }
       | undefined,
+    federalState?: string,
   ): string | undefined {
-    if (!headers) {
+    if (!headers && !federalState) {
       return undefined;
     }
 
-    const hasAnyHeader = Boolean(headers.accept || headers.acceptLanguage || headers.apiKey);
+    const hasAnyHeader = Boolean(headers?.accept || headers?.acceptLanguage || federalState);
     if (!hasAnyHeader) {
       return undefined;
     }
 
     return hashKeyForLogging(
       JSON.stringify({
-        accept: headers.accept ?? '',
-        acceptLanguage: headers.acceptLanguage ?? '',
-        apiKey: headers.apiKey ?? '',
+        federalState: federalState?.trim().toUpperCase() ?? '',
+        accept: headers?.accept ?? '',
+        acceptLanguage: headers?.acceptLanguage ?? '',
       }),
     );
   }

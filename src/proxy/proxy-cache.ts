@@ -1,5 +1,7 @@
 import type { HttpClientRawResponse } from '../http-client/http-client.service';
-import { sha256Hex } from '../utils/hash';
+import type { FederalStateCode } from '../config/state-upstreams';
+
+export type CachePartition = `state:${FederalStateCode}` | 'external:gd';
 
 export type ProxyCachePolicy = {
   cacheable: boolean;
@@ -44,15 +46,14 @@ export function shouldBypassProxyCache(
 export function buildProxyCacheKey(
   method: 'GET' | 'POST',
   path: string,
+  cachePartition: CachePartition,
   headers?: Record<string, string>,
 ): string {
   // Normalize selected headers into the cache key to prevent variant collisions.
   const accept = normalizeHeaderValue(headers?.accept);
   const acceptLanguage = normalizeHeaderValue(headers?.['accept-language']);
-  // api_key must not appear in plaintext in cache keys. It is treated case-sensitively.
-  const apiKeyHash = hashCredential(headers?.api_key, method, path);
-  const headerFingerprint = [accept, acceptLanguage, apiKeyHash].join('|');
-  return `proxy:${method}:${path}:${headerFingerprint}`;
+  const headerFingerprint = [accept, acceptLanguage].join('|');
+  return `proxy:${method}:${path}:${cachePartition}:${headerFingerprint}`;
 }
 
 export function deriveProxyCachePolicy<T>(
@@ -97,24 +98,6 @@ function normalizeHeaderValue(value: string | undefined): string {
     return '';
   }
   return value.trim().toLowerCase();
-}
-
-function hashCredential(value: string | undefined, method: string, path: string): string {
-  if (!value) {
-    return '';
-  }
-
-  const trimmedValue = value.trim();
-  if (trimmedValue.length === 0) {
-    return '';
-  }
-
-  // Rationale:
-  // - Cache keys must never include credentials in plaintext (security requirement).
-  // - Keys still need to be stable to preserve cache hits (functional requirement).
-  // - Hashing provides stability without leakage; method+path as context prevents
-  //   the same api_key from producing identical fingerprints across endpoints.
-  return sha256Hex(`${method}:${path}:${trimmedValue}`);
 }
 
 function normalizePath(value: string): string {

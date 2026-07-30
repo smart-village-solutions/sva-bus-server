@@ -30,8 +30,6 @@ describe('HttpClientService', () => {
           useValue: {
             get: (key: string) => {
               switch (key) {
-                case 'HTTP_CLIENT_BASE_URL':
-                  return 'https://example.com/';
                 case 'HTTP_CLIENT_TIMEOUT':
                   return 5000;
                 case 'HTTP_CLIENT_RETRIES':
@@ -58,7 +56,9 @@ describe('HttpClientService', () => {
       text: async () => JSON.stringify({ ok: true }),
     });
 
-    await expect(service.get('/test')).resolves.toEqual({ ok: true });
+    await expect(
+      service.get('/test', { baseUrlOverride: 'https://example.com' }),
+    ).resolves.toEqual({ ok: true });
     expect(mockedFetch).toHaveBeenCalledTimes(2);
   });
 
@@ -66,7 +66,11 @@ describe('HttpClientService', () => {
     jest.useFakeTimers();
     mockedFetch.mockImplementation(() => new Promise(() => undefined));
 
-    const promise = service.get('/timeout', { timeoutMs: 10, retries: 0 });
+    const promise = service.get('/timeout', {
+      baseUrlOverride: 'https://example.com',
+      timeoutMs: 10,
+      retries: 0,
+    });
     const expectation = expect(promise).rejects.toThrow('Request timed out');
 
     await jest.advanceTimersByTimeAsync(20);
@@ -84,7 +88,9 @@ describe('HttpClientService', () => {
       text: async () => 'plain-text',
     });
 
-    await expect(service.get('/text')).resolves.toEqual('plain-text');
+    await expect(
+      service.get('/text', { baseUrlOverride: 'https://example.com' }),
+    ).resolves.toEqual('plain-text');
   });
 
   it('returns raw responses for non-2xx status codes', async () => {
@@ -105,7 +111,12 @@ describe('HttpClientService', () => {
       text: async () => JSON.stringify({ error: 'bad-gateway' }),
     });
 
-    await expect(service.requestRaw('GET', '/bad', undefined, { retries: 0 })).resolves.toEqual({
+    await expect(
+      service.requestRaw('GET', '/bad', undefined, {
+        baseUrlOverride: 'https://example.com',
+        retries: 0,
+      }),
+    ).resolves.toEqual({
       status: 502,
       body: { error: 'bad-gateway' },
       contentType: 'application/json',
@@ -130,7 +141,12 @@ describe('HttpClientService', () => {
       text: async () => JSON.stringify({ ok: true }),
     });
 
-    await expect(service.requestRaw('GET', '/diag', undefined, { retries: 0 })).resolves.toEqual({
+    await expect(
+      service.requestRaw('GET', '/diag', undefined, {
+        baseUrlOverride: 'https://example.com',
+        retries: 0,
+      }),
+    ).resolves.toEqual({
       status: 200,
       body: { ok: true },
       contentType: 'application/json',
@@ -152,7 +168,10 @@ describe('HttpClientService', () => {
     });
 
     await expect(
-      service.requestRaw('GET', '/retry', undefined, { retries: Number.NaN }),
+      service.requestRaw('GET', '/retry', undefined, {
+        baseUrlOverride: 'https://example.com',
+        retries: Number.NaN,
+      }),
     ).resolves.toEqual({
       status: 200,
       body: { ok: true },
@@ -166,7 +185,10 @@ describe('HttpClientService', () => {
     mockedFetch.mockRejectedValueOnce(new Error('boom'));
 
     await expect(
-      service.requestRaw('POST', '/retry', { ok: true }, { retries: 2 }),
+      service.requestRaw('POST', '/retry', { ok: true }, {
+        baseUrlOverride: 'https://example.com',
+        retries: 2,
+      }),
     ).rejects.toThrow('boom');
     expect(mockedFetch).toHaveBeenCalledTimes(1);
   });
@@ -187,7 +209,7 @@ describe('HttpClientService', () => {
     const localService = module.get<HttpClientService>(HttpClientService);
 
     await expect(localService.get('/missing')).rejects.toThrow(
-      'HTTP client base URL is not configured properly',
+      'HTTP client request requires an explicit base URL',
     );
   });
 
@@ -199,9 +221,6 @@ describe('HttpClientService', () => {
           provide: ConfigService,
           useValue: {
             get: (key: string) => {
-              if (key === 'HTTP_CLIENT_BASE_URL') {
-                return 'https://example.com/base/';
-              }
               if (key === 'HTTP_CLIENT_TIMEOUT') {
                 return 5000;
               }
@@ -217,7 +236,9 @@ describe('HttpClientService', () => {
 
     const localService = module.get<HttpClientService>(HttpClientService);
 
-    await expect(localService.get('/test')).rejects.toThrow(
+    await expect(
+      localService.get('/test', { baseUrlOverride: 'https://example.com/base/' }),
+    ).rejects.toThrow(
       'HTTP client base URL must not include a path',
     );
     expect(mockedFetch).not.toHaveBeenCalled();
@@ -259,7 +280,11 @@ describe('HttpClientService', () => {
     });
 
     const controller = new AbortController();
-    const promise = service.get('/abort', { signal: controller.signal, retries: 0 });
+    const promise = service.get('/abort', {
+      baseUrlOverride: 'https://example.com',
+      signal: controller.signal,
+      retries: 0,
+    });
 
     controller.abort();
 

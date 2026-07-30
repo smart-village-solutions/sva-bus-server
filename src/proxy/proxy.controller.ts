@@ -11,25 +11,21 @@ import {
   UnsupportedMediaTypeException,
   UseGuards,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 import { ProxyAccessGuard } from '../api-keys/proxy-access.guard';
-import type { HttpRequestOptions } from '../http-client/http-client.service';
+import { FederalStateUpstreamService } from '../config/federal-state-upstream.service';
+import type { ProxyForwardOptions } from './proxy.service';
 import { ProxyService } from './proxy.service';
 
 @Controller('api/v1')
 @UseGuards(ProxyAccessGuard)
 export class ProxyController {
   private static readonly POLITICAL_AREA_BASE_URL = 'https://gd-api.zfinder.de';
-  private readonly apiKey: string | null;
-
   constructor(
     private readonly proxyService: ProxyService,
-    private readonly configService: ConfigService,
-  ) {
-    this.apiKey = this.configService.get<string>('HTTP_CLIENT_API_KEY') ?? null;
-  }
+    private readonly federalStateUpstreamService: FederalStateUpstreamService,
+  ) {}
 
   @Get()
   async handleRootGet(
@@ -48,6 +44,7 @@ export class ProxyController {
     const upstreamPath = rawQuery ? `/PoliticalArea/search?${rawQuery}` : '/PoliticalArea/search';
     return this.forwardUpstreamPath('GET', upstreamPath, request, undefined, reply, {
       baseUrlOverride: ProxyController.POLITICAL_AREA_BASE_URL,
+      cachePartition: 'external:gd',
     });
   }
 
@@ -65,6 +62,7 @@ export class ProxyController {
       reply,
       {
         baseUrlOverride: ProxyController.POLITICAL_AREA_BASE_URL,
+        cachePartition: 'external:gd',
       },
     );
   }
@@ -98,7 +96,14 @@ export class ProxyController {
     const path = this.extractPath(request.url ?? '');
     const rawQuery = this.extractQueryString(request.url ?? '');
     const pathWithQuery = rawQuery ? `${path}?${rawQuery}` : path;
-    return this.forwardUpstreamPath(method, pathWithQuery, request, body, reply);
+    const upstream = this.federalStateUpstreamService.resolve(
+      request.headers['x-federal-state'],
+    );
+    return this.forwardUpstreamPath(method, pathWithQuery, request, body, reply, {
+      baseUrlOverride: upstream.baseUrl,
+      cachePartition: `state:${upstream.federalState}`,
+      headers: { api_key: upstream.apiKey },
+    });
   }
 
   private async forwardUpstreamPath(
@@ -107,9 +112,9 @@ export class ProxyController {
     request: FastifyRequest,
     body: unknown,
     reply: FastifyReply,
-    options?: HttpRequestOptions,
+    options: ProxyForwardOptions,
   ): Promise<unknown> {
-    const headers = this.buildForwardHeaders(request);
+    const headers = this.buildForwardHeaders(request, options.headers?.api_key);
 
     try {
       const { response, cacheStatus, cacheKeyHash } = await this.proxyService.forward(
@@ -117,8 +122,8 @@ export class ProxyController {
         pathWithQuery,
         body,
         {
-          headers,
           ...options,
+          headers,
         },
       );
       reply.status(response.status);
@@ -180,12 +185,13 @@ export class ProxyController {
     return url.slice(queryIndex + 1) || null;
   }
 
-  private buildForwardHeaders(request: FastifyRequest): Record<string, string> | undefined {
+  private buildForwardHeaders(
+    request: FastifyRequest,
+    upstreamApiKey?: string,
+  ): Record<string, string> | undefined {
     const headers = this.normalizeHeaders(request.headers);
-    const apiKey = this.resolveApiKey(headers);
-
-    if (apiKey) {
-      headers.api_key = apiKey;
+    if (upstreamApiKey) {
+      headers.api_key = upstreamApiKey;
     }
 
     return Object.keys(headers).length > 0 ? headers : undefined;
@@ -225,6 +231,8 @@ export class ProxyController {
       'x-forwarded-port',
       'x-real-ip',
       'x-api-key',
+      'x-federal-state',
+      'api_key',
     ]);
 
     // Normalize the connection header to a single token list so we apply the cleanup once.
@@ -248,7 +256,6 @@ export class ProxyController {
       'accept',
       'accept-encoding',
       'accept-language',
-      'api_key',
       'authorization',
       'content-type',
       'user-agent',
@@ -284,19 +291,6 @@ export class ProxyController {
     }
 
     return allowlistedHeaders.has(header);
-  }
-
-  private resolveApiKey(headers: Record<string, string>): string | null {
-    const existingHeader = headers.api_key;
-    if (existingHeader && existingHeader.length > 0) {
-      return existingHeader;
-    }
-
-    if (!this.apiKey) {
-      return null;
-    }
-
-    return this.apiKey;
   }
 
   private isJsonContentType(contentType: string | string[] | undefined): boolean {

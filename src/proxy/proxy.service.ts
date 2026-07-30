@@ -8,6 +8,11 @@ import { HttpClientService } from '../http-client/http-client.service';
 import { hashKeyForLogging } from '../utils/hash';
 import { parseBoolean } from '../utils/parse-boolean';
 import { buildProxyCacheKey, deriveProxyCachePolicy, shouldBypassProxyCache } from './proxy-cache';
+import type { CachePartition } from './proxy-cache';
+
+export type ProxyForwardOptions = HttpRequestOptions & {
+  cachePartition: CachePartition;
+};
 
 @Injectable()
 export class ProxyService {
@@ -32,14 +37,19 @@ export class ProxyService {
     method: 'GET' | 'POST',
     path: string,
     body?: unknown,
-    options?: HttpRequestOptions,
+    options?: ProxyForwardOptions,
   ): Promise<{
     response: HttpClientRawResponse<T>;
     cacheStatus?: CacheStatus;
     cacheKeyHash?: string;
   }> {
+    if (!options?.cachePartition) {
+      throw new Error('Proxy cache partition is required');
+    }
+    const { cachePartition, ...httpOptions } = options;
+
     if (method !== 'GET') {
-      const response = await this.httpClientService.requestRaw<T>(method, path, body, options);
+      const response = await this.httpClientService.requestRaw<T>(method, path, body, httpOptions);
       return { response };
     }
 
@@ -61,12 +71,12 @@ export class ProxyService {
           }),
         );
       }
-      const response = await this.httpClientService.requestRaw<T>(method, path, body, options);
+      const response = await this.httpClientService.requestRaw<T>(method, path, body, httpOptions);
       return { response, cacheStatus: 'BYPASS' };
     }
 
     // Cache key is based on path/query and selected headers to avoid variant mixing.
-    const cacheKey = buildProxyCacheKey(method, path, options?.headers);
+    const cacheKey = buildProxyCacheKey(method, path, cachePartition, options.headers);
     const cacheKeyHash = hashKeyForLogging(cacheKey);
     if (this.cacheDebug) {
       this.logger.debug(
@@ -89,7 +99,7 @@ export class ProxyService {
     const cached = await this.cacheService.wrapCacheable<HttpClientRawResponse<T>>(
       cacheKey,
       async () => {
-        const response = await this.httpClientService.requestRaw<T>(method, path, body, options);
+        const response = await this.httpClientService.requestRaw<T>(method, path, body, httpOptions);
         const policy = deriveProxyCachePolicy(response, {
           ignoreUpstreamControl: this.ignoreUpstreamControl,
         });

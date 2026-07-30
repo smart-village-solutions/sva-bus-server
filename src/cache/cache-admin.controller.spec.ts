@@ -88,6 +88,8 @@ describe('CacheAdminController', () => {
         {
           scope: 'exact',
           path: '/pst/find?areaId=10790',
+          strict: true,
+          federalState: 'BB',
           headers: {
             acceptLanguage: 123,
           },
@@ -96,6 +98,51 @@ describe('CacheAdminController', () => {
     ).rejects.toMatchObject({
       status: 400,
     });
+    expect(cacheAdminService.invalidate).not.toHaveBeenCalled();
+  });
+
+  it('passes federalState for strict invalidation without an API key', async () => {
+    cacheAdminService.invalidate.mockResolvedValueOnce({
+      scope: 'exact',
+      dryRun: false,
+      matched: 1,
+      deleted: 1,
+    });
+
+    await controller.invalidate(
+      { headers: {}, ip: '127.0.0.1' } as never,
+      {
+        scope: 'exact',
+        path: '/pst/find',
+        strict: true,
+        federalState: 'bb',
+        headers: { accept: 'application/json' },
+      },
+    );
+
+    expect(cacheAdminService.invalidate).toHaveBeenCalledWith({
+      scope: 'exact',
+      path: '/pst/find',
+      strict: true,
+      federalState: 'bb',
+      headers: { accept: 'application/json', acceptLanguage: undefined },
+      dryRun: false,
+    });
+  });
+
+  it('rejects legacy headers.apiKey', async () => {
+    await expect(
+      controller.invalidate(
+        { headers: {}, ip: '127.0.0.1' } as never,
+        {
+          scope: 'exact',
+          path: '/pst/find',
+          strict: true,
+          federalState: 'BB',
+          headers: { apiKey: 'legacy' },
+        },
+      ),
+    ).rejects.toMatchObject({ status: 400 });
     expect(cacheAdminService.invalidate).not.toHaveBeenCalled();
   });
 });

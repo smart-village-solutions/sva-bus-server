@@ -27,13 +27,11 @@ interface HttpError extends Error {
 @Injectable()
 export class HttpClientService implements OnModuleDestroy {
   private readonly logger = new Logger(HttpClientService.name);
-  private readonly baseUrl: string;
   private readonly defaultTimeoutMs: number;
   private readonly defaultRetries: number;
   private readonly dispatcher: Agent;
 
   constructor(private readonly configService: ConfigService) {
-    this.baseUrl = this.configService.get<string>('HTTP_CLIENT_BASE_URL') ?? '';
     this.defaultTimeoutMs = this.normalizeTimeoutMs(
       this.configService.get('HTTP_CLIENT_TIMEOUT'),
       10000,
@@ -280,13 +278,11 @@ export class HttpClientService implements OnModuleDestroy {
       throw new Error('Absolute proxy URLs are not allowed');
     }
 
-    const effectiveBaseUrl = baseUrlOverride ?? this.baseUrl;
-
-    if (!effectiveBaseUrl) {
-      throw new Error('HTTP client base URL is not configured properly');
+    if (!baseUrlOverride) {
+      throw new Error('HTTP client request requires an explicit base URL');
     }
 
-    const baseUrl = new URL(effectiveBaseUrl);
+    const baseUrl = new URL(baseUrlOverride);
     if (baseUrl.pathname && baseUrl.pathname !== '/') {
       throw new Error('HTTP client base URL must not include a path');
     }

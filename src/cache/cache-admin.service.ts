@@ -5,6 +5,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 
+import { FederalStateUpstreamService } from '../config/federal-state-upstream.service';
 import { buildProxyCacheKey } from '../proxy/proxy-cache';
 import { CacheService } from './cache.service';
 
@@ -17,13 +18,13 @@ export type CacheInvalidationScope = 'exact' | 'prefix' | 'all';
 export type StrictCacheKeyHeaders = {
   accept?: string;
   acceptLanguage?: string;
-  apiKey?: string;
 };
 
 export type InvalidateExactInput = {
   scope: 'exact';
   path: string;
   strict?: boolean;
+  federalState?: string;
   headers?: StrictCacheKeyHeaders;
   dryRun?: boolean;
 };
@@ -66,7 +67,10 @@ type RedisClient = {
 export class CacheAdminService {
   private readonly logger = new Logger(CacheAdminService.name);
 
-  constructor(private readonly cacheService: CacheService) {}
+  constructor(
+    private readonly cacheService: CacheService,
+    private readonly federalStateUpstreamService: FederalStateUpstreamService,
+  ) {}
 
   async invalidate(input: InvalidateProxyCacheInput): Promise<InvalidateProxyCacheResult> {
     const dryRun = input.dryRun ?? false;
@@ -88,21 +92,21 @@ export class CacheAdminService {
     const normalizedPath = this.normalizePathWithOptionalQuery(input.path);
     if (input.strict) {
       const headers: Record<string, string> = {};
+      const upstream = this.federalStateUpstreamService.resolve(input.federalState);
       const accept = this.normalizeHeaderValue(input.headers?.accept);
       const acceptLanguage = this.normalizeHeaderValue(input.headers?.acceptLanguage);
-      const apiKey = this.normalizeApiKey(input.headers?.apiKey);
       if (accept) {
         headers.accept = accept;
       }
       if (acceptLanguage) {
         headers['accept-language'] = acceptLanguage;
       }
-      if (apiKey) {
-        headers.api_key = apiKey;
-      }
-      const key = buildProxyCacheKey('GET', normalizedPath, {
-        ...headers,
-      });
+      const key = buildProxyCacheKey(
+        'GET',
+        normalizedPath,
+        `state:${upstream.federalState}`,
+        headers,
+      );
       return this.invalidateStrictKey(input.scope, key, dryRun);
     }
 
@@ -313,15 +317,6 @@ export class CacheAdminService {
   }
 
   private normalizeHeaderValue(value: string | undefined): string | undefined {
-    const trimmed = value?.trim();
-    if (!trimmed) {
-      return undefined;
-    }
-
-    return trimmed;
-  }
-
-  private normalizeApiKey(value: string | undefined): string | undefined {
     const trimmed = value?.trim();
     if (!trimmed) {
       return undefined;

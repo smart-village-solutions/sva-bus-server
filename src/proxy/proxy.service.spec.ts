@@ -88,6 +88,7 @@ describe('ProxyService', () => {
 
   it('caches GET responses and returns hits on subsequent calls', async () => {
     const first = await service.forward('GET', '/example', undefined, {
+      cachePartition: 'state:BB',
       headers: { accept: 'application/json' },
     });
 
@@ -96,6 +97,7 @@ describe('ProxyService', () => {
     expect(first.cacheKeyHash).toHaveLength(32);
 
     const second = await service.forward('GET', '/example', undefined, {
+      cachePartition: 'state:BB',
       headers: { accept: 'application/json' },
     });
 
@@ -106,12 +108,14 @@ describe('ProxyService', () => {
 
   it('bypasses cache when authorization header is present', async () => {
     const first = await service.forward('GET', '/secure', undefined, {
+      cachePartition: 'state:BB',
       headers: { authorization: 'Bearer token' },
     });
 
     expect(first.cacheStatus).toBe('BYPASS');
 
     await service.forward('GET', '/secure', undefined, {
+      cachePartition: 'state:BB',
       headers: { authorization: 'Bearer token' },
     });
 
@@ -119,7 +123,9 @@ describe('ProxyService', () => {
   });
 
   it('returns stale responses and refreshes in background', async () => {
-    const key = buildProxyCacheKey('GET', '/stale', { accept: 'application/json' });
+    const key = buildProxyCacheKey('GET', '/stale', 'state:BB', {
+      accept: 'application/json',
+    });
     cacheStore.set(key, {
       value: {
         status: 200,
@@ -134,6 +140,7 @@ describe('ProxyService', () => {
     });
 
     const response = await service.forward('GET', '/stale', undefined, {
+      cachePartition: 'state:BB',
       headers: { accept: 'application/json' },
     });
 
@@ -144,15 +151,41 @@ describe('ProxyService', () => {
 
   it('bypasses cache for configured paths', async () => {
     const first = await service.forward('GET', '/bypass/resource?foo=bar', undefined, {
+      cachePartition: 'state:BB',
       headers: { accept: 'application/json' },
     });
 
     expect(first.cacheStatus).toBe('BYPASS');
 
     await service.forward('GET', '/bypass/resource?foo=bar', undefined, {
+      cachePartition: 'state:BB',
       headers: { accept: 'application/json' },
     });
 
     expect(httpClientService.requestRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it('isolates identical requests by state while reusing same-state cache', async () => {
+    await service.forward('GET', '/same', undefined, {
+      cachePartition: 'state:BB',
+      baseUrlOverride: 'https://bb.example.test',
+      headers: { api_key: 'bb-fixture-key' },
+    });
+    await service.forward('GET', '/same', undefined, {
+      cachePartition: 'state:RP',
+      baseUrlOverride: 'https://rp.example.test',
+      headers: { api_key: 'rp-fixture-key' },
+    });
+    await service.forward('GET', '/same', undefined, {
+      cachePartition: 'state:BB',
+      baseUrlOverride: 'https://bb.example.test',
+      headers: { api_key: 'bb-fixture-key' },
+    });
+
+    expect(httpClientService.requestRaw).toHaveBeenCalledTimes(2);
+    const keys = [...cacheStore.keys()];
+    expect(keys.some((key) => key.includes('state:BB'))).toBe(true);
+    expect(keys.some((key) => key.includes('state:RP'))).toBe(true);
+    expect(keys.join(' ')).not.toContain('fixture-key');
   });
 });
