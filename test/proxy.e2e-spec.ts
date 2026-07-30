@@ -4,7 +4,6 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { Test, TestingModule } from '@nestjs/testing';
 
 import type { Cache } from 'cache-manager';
-import { AppModule } from '../src/app.module';
 import { HttpClientService } from '../src/http-client/http-client.service';
 import { buildProxyCacheKey } from '../src/proxy/proxy-cache';
 import { sha256Hex } from '../src/utils/hash';
@@ -13,6 +12,16 @@ const CACHE_STATUSES = new Set(['HIT', 'MISS', 'STALE', 'BYPASS']);
 const TEST_CLIENT_API_KEY = 'client-key-e2e';
 const TEST_ADMIN_TOKEN = 'admin-token-e2e';
 const TEST_KEYS_PREFIX = 'test-api-keys';
+const TEST_STATE_UPSTREAMS = JSON.stringify({
+  BB: { baseUrl: 'https://bb.example.test', apiKey: 'bb-upstream-fixture' },
+  RP: { baseUrl: 'https://rp.example.test', apiKey: 'rp-upstream-fixture' },
+});
+jest.mock('cache-manager-redis-yet', () => ({
+  redisStore: jest.fn().mockRejectedValue(new Error('Redis disabled in e2e')),
+}));
+const ORIGINAL_STATE_UPSTREAMS = process.env.HTTP_CLIENT_STATE_UPSTREAMS;
+process.env.HTTP_CLIENT_STATE_UPSTREAMS = TEST_STATE_UPSTREAMS;
+const { AppModule } = jest.requireActual<typeof import('../src/app.module')>('../src/app.module');
 
 const expectCacheHeader = (response: { headers: Record<string, unknown> }) => {
   const cacheHeader = response.headers['x-cache'];
@@ -44,7 +53,6 @@ describe('Proxy endpoint (e2e)', () => {
   let redisSets: Map<string, Set<string>>;
   let redisExpiry: Map<string, number>;
   let cacheManager: Cache;
-  let originalBaseUrl: string | undefined;
   let originalBodyLimit: string | undefined;
 
   type InjectRequest = Exclude<Parameters<NestFastifyApplication['inject']>[0], string>;
@@ -97,8 +105,12 @@ describe('Proxy endpoint (e2e)', () => {
     }
   };
 
-  const injectProxy = (request: InjectRequest): ReturnType<NestFastifyApplication['inject']> => {
+  const injectProxy = (
+    request: InjectRequest,
+    options: { includeFederalState?: boolean } = {},
+  ): ReturnType<NestFastifyApplication['inject']> => {
     const headers = {
+      ...(options.includeFederalState === false ? {} : { 'x-federal-state': 'BB' }),
       ...(request?.headers ?? {}),
       'x-api-key': TEST_CLIENT_API_KEY,
     };
@@ -110,9 +122,7 @@ describe('Proxy endpoint (e2e)', () => {
   };
 
   beforeAll(async () => {
-    originalBaseUrl = process.env.HTTP_CLIENT_BASE_URL;
     originalBodyLimit = process.env.PROXY_BODY_LIMIT;
-    process.env.HTTP_CLIENT_BASE_URL = 'https://example.com';
     delete process.env.PROXY_BODY_LIMIT;
 
     cacheStore = new Map();
@@ -238,8 +248,7 @@ describe('Proxy endpoint (e2e)', () => {
       .overrideProvider(ConfigService)
       .useValue({
         get: (key: string) => {
-          if (key === 'HTTP_CLIENT_API_KEY') return 'test-key';
-          if (key === 'HTTP_CLIENT_BASE_URL') return '';
+          if (key === 'HTTP_CLIENT_STATE_UPSTREAMS') return TEST_STATE_UPSTREAMS;
           if (key === 'HTTP_CLIENT_TIMEOUT') return '10000';
           if (key === 'HTTP_CLIENT_RETRIES') return '2';
           if (key === 'CACHE_DEBUG') return 'true';
@@ -265,6 +274,7 @@ describe('Proxy endpoint (e2e)', () => {
   });
 
   beforeEach(() => {
+    jest.clearAllMocks();
     httpClientService.requestRaw.mockReset();
     cacheStore.clear();
     cacheExpiry.clear();
@@ -288,10 +298,10 @@ describe('Proxy endpoint (e2e)', () => {
 
   afterAll(async () => {
     await app.close();
-    if (originalBaseUrl === undefined) {
-      delete process.env.HTTP_CLIENT_BASE_URL;
+    if (ORIGINAL_STATE_UPSTREAMS === undefined) {
+      delete process.env.HTTP_CLIENT_STATE_UPSTREAMS;
     } else {
-      process.env.HTTP_CLIENT_BASE_URL = originalBaseUrl;
+      process.env.HTTP_CLIENT_STATE_UPSTREAMS = ORIGINAL_STATE_UPSTREAMS;
     }
     if (originalBodyLimit === undefined) {
       delete process.env.PROXY_BODY_LIMIT;
@@ -320,21 +330,113 @@ describe('Proxy endpoint (e2e)', () => {
       '/test?foo=bar',
       undefined,
       expect.objectContaining({
-        headers: expect.objectContaining({ api_key: 'test-key', 'x-request-id': 'abc-123' }),
+        baseUrlOverride: 'https://bb.example.test',
+        headers: expect.objectContaining({
+          api_key: 'bb-upstream-fixture',
+          'x-request-id': 'abc-123',
+        }),
       }),
     );
+  });
+
+  it.each([
+    ['BB', 'https://bb.example.test', 'bb-upstream-fixture'],
+    ['rp', 'https://rp.example.test', 'rp-upstream-fixture'],
+  ])('routes state %s to its matched origin and key', async (state, baseUrl, apiKey) => {
+    httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
+
+    const response = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/pstCategory/find',
+      headers: { 'x-federal-state': state },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(httpClientService.requestRaw).toHaveBeenCalledWith(
+      'GET',
+      '/pstCategory/find',
+      undefined,
+      expect.objectContaining({
+        baseUrlOverride: baseUrl,
+        headers: expect.objectContaining({ api_key: apiKey }),
+      }),
+    );
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['unknown', 'XX'],
+    ['known but unconfigured', 'BE'],
+  ])('rejects %s state before cache or upstream access', async (_case, state) => {
+    const response = await injectProxy(
+      {
+        method: 'GET',
+        url: '/api/v1/pstCategory/find',
+        ...(state ? { headers: { 'x-federal-state': state } } : {}),
+      },
+      { includeFederalState: false },
+    );
+
+    expect(response.statusCode).toBe(400);
+    expect(httpClientService.requestRaw).not.toHaveBeenCalled();
+    expect(cacheManager.get).not.toHaveBeenCalled();
+  });
+
+  it('caches the same path independently for two states', async () => {
+    httpClientService.requestRaw.mockResolvedValue(buildUpstreamResponse());
+
+    const bbFirst = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/state-cache',
+      headers: { 'x-federal-state': 'BB' },
+    });
+    const rpFirst = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/state-cache',
+      headers: { 'x-federal-state': 'RP' },
+    });
+    const bbSecond = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/state-cache',
+      headers: { 'x-federal-state': 'BB' },
+    });
+
+    expect([bbFirst.headers['x-cache'], rpFirst.headers['x-cache']]).toEqual(['MISS', 'MISS']);
+    expect(bbSecond.headers['x-cache']).toBe('HIT');
+    expect(httpClientService.requestRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not forward caller-controlled selector or credentials', async () => {
+    httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
+
+    await injectProxy({
+      method: 'GET',
+      url: '/api/v1/header-boundary',
+      headers: {
+        'x-federal-state': 'BB',
+        api_key: 'caller-upstream-key',
+      },
+    });
+
+    const callOptions = httpClientService.requestRaw.mock.calls[0]?.[3];
+    expect(callOptions.headers).toEqual(expect.objectContaining({ api_key: 'bb-upstream-fixture' }));
+    expect(callOptions.headers).not.toHaveProperty('x-federal-state');
+    expect(callOptions.headers).not.toHaveProperty('x-api-key');
   });
 
   it('forwards PoliticalArea search requests with repeated searchWords parameters', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
-    const response = await injectProxy({
-      method: 'GET',
-      url: '/api/v1/political-area/search?searchWords=Bad&searchWords=Bel*',
-      headers: {
-        'x-request-id': 'political-area-search',
+    const response = await injectProxy(
+      {
+        method: 'GET',
+        url: '/api/v1/political-area/search?searchWords=Bad&searchWords=Bel*',
+        headers: {
+          'x-request-id': 'political-area-search',
+        },
       },
-    });
+      { includeFederalState: false },
+    );
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true });
@@ -343,10 +445,8 @@ describe('Proxy endpoint (e2e)', () => {
       '/PoliticalArea/search?searchWords=Bad&searchWords=Bel*',
       undefined,
       expect.objectContaining({
-        headers: expect.objectContaining({
-          api_key: 'test-key',
-          'x-request-id': 'political-area-search',
-        }),
+        baseUrlOverride: 'https://gd-api.zfinder.de',
+        headers: expect.objectContaining({ 'x-request-id': 'political-area-search' }),
       }),
     );
   });
@@ -354,13 +454,16 @@ describe('Proxy endpoint (e2e)', () => {
   it('forwards PoliticalArea detail requests by id', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
-    const response = await injectProxy({
-      method: 'GET',
-      url: '/api/v1/political-area/11111',
-      headers: {
-        'x-request-id': 'political-area-detail',
+    const response = await injectProxy(
+      {
+        method: 'GET',
+        url: '/api/v1/political-area/11111',
+        headers: {
+          'x-request-id': 'political-area-detail',
+        },
       },
-    });
+      { includeFederalState: false },
+    );
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true });
@@ -369,10 +472,8 @@ describe('Proxy endpoint (e2e)', () => {
       '/PoliticalArea/11111',
       undefined,
       expect.objectContaining({
-        headers: expect.objectContaining({
-          api_key: 'test-key',
-          'x-request-id': 'political-area-detail',
-        }),
+        baseUrlOverride: 'https://gd-api.zfinder.de',
+        headers: expect.objectContaining({ 'x-request-id': 'political-area-detail' }),
       }),
     );
   });
@@ -411,6 +512,7 @@ describe('Proxy endpoint (e2e)', () => {
       url: '/api/v1/test',
       headers: {
         'x-api-key': created.apiKey,
+        'x-federal-state': 'BB',
       },
     });
     expect(validProxyResponse.statusCode).toBe(200);
@@ -500,6 +602,54 @@ describe('Proxy endpoint (e2e)', () => {
     });
     expect(third.statusCode).toBe(200);
     expect(third.headers['x-cache']).toBe('MISS');
+  });
+
+  it('strictly invalidates one state variant without accepting an API key', async () => {
+    httpClientService.requestRaw.mockResolvedValue(buildUpstreamResponse());
+    const path = '/strict-state?value=1';
+
+    await injectProxy({
+      method: 'GET',
+      url: `/api/v1${path}`,
+      headers: { 'x-federal-state': 'BB', accept: 'application/json' },
+    });
+    await injectProxy({
+      method: 'GET',
+      url: `/api/v1${path}`,
+      headers: { 'x-federal-state': 'RP', accept: 'application/json' },
+    });
+
+    const invalidate = await app.inject({
+      method: 'POST',
+      url: '/internal/cache/invalidate',
+      headers: {
+        authorization: `Bearer ${TEST_ADMIN_TOKEN}`,
+        'content-type': 'application/json',
+      },
+      payload: {
+        scope: 'exact',
+        path,
+        strict: true,
+        federalState: 'bb',
+        headers: { accept: 'application/json' },
+      },
+    });
+
+    expect(invalidate.statusCode).toBe(201);
+    expect(invalidate.json()).toEqual(expect.objectContaining({ matched: 1, deleted: 1 }));
+
+    const bbAfter = await injectProxy({
+      method: 'GET',
+      url: `/api/v1${path}`,
+      headers: { 'x-federal-state': 'BB', accept: 'application/json' },
+    });
+    const rpAfter = await injectProxy({
+      method: 'GET',
+      url: `/api/v1${path}`,
+      headers: { 'x-federal-state': 'RP', accept: 'application/json' },
+    });
+    expect(bbAfter.headers['x-cache']).toBe('MISS');
+    expect(rpAfter.headers['x-cache']).toBe('HIT');
   });
 
   it('supports dryRun invalidation without deleting cache entries', async () => {
@@ -680,10 +830,10 @@ describe('Proxy endpoint (e2e)', () => {
     const key = buildProxyCacheKey(
       'GET',
       '/pst/find?searchWord=personalausweis%20beantra&areaId=10790',
+      'state:BB',
       {
         accept: '*/*',
         'accept-language': 'de-DE',
-        api_key: 'test-key',
       },
     );
     cacheStore.set(key, {
@@ -720,7 +870,7 @@ describe('Proxy endpoint (e2e)', () => {
     expect(response.headers['x-cache']).toBe('BYPASS');
   });
 
-  it('forwards api_key header when missing on request', async () => {
+  it('adds the selected server-owned api_key', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
     const response = await injectProxy({
@@ -735,7 +885,7 @@ describe('Proxy endpoint (e2e)', () => {
       '/api-key',
       undefined,
       expect.objectContaining({
-        headers: expect.objectContaining({ api_key: 'test-key' }),
+        headers: expect.objectContaining({ api_key: 'bb-upstream-fixture' }),
       }),
     );
   });
@@ -761,7 +911,7 @@ describe('Proxy endpoint (e2e)', () => {
       { name: 'test' },
       expect.objectContaining({
         headers: expect.objectContaining({
-          api_key: 'test-key',
+          api_key: 'bb-upstream-fixture',
           authorization: 'Bearer test-token',
           'x-trace-id': 'trace-1',
         }),
@@ -769,7 +919,7 @@ describe('Proxy endpoint (e2e)', () => {
     );
   });
 
-  it('preserves client api_key header', async () => {
+  it('replaces a client api_key header with the selected server-owned key', async () => {
     httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
 
     const response = await injectProxy({
@@ -787,7 +937,7 @@ describe('Proxy endpoint (e2e)', () => {
       '/override',
       undefined,
       expect.objectContaining({
-        headers: expect.objectContaining({ api_key: 'client-key' }),
+        headers: expect.objectContaining({ api_key: 'bb-upstream-fixture' }),
       }),
     );
   });

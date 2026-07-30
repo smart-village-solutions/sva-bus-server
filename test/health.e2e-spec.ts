@@ -1,15 +1,19 @@
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test, TestingModule } from '@nestjs/testing';
-import { AppModule } from '../src/app.module';
+
+jest.mock('cache-manager-redis-yet', () => ({
+  redisStore: jest.fn().mockRejectedValue(new Error('Redis disabled in e2e')),
+}));
+const ORIGINAL_STATE_UPSTREAMS = process.env.HTTP_CLIENT_STATE_UPSTREAMS;
+process.env.HTTP_CLIENT_STATE_UPSTREAMS = JSON.stringify({
+  BB: { baseUrl: 'https://bb.example.test', apiKey: 'health-fixture-key' },
+});
+const { AppModule } = jest.requireActual<typeof import('../src/app.module')>('../src/app.module');
 
 describe('Health endpoint (e2e)', () => {
   let app: NestFastifyApplication;
-  let originalBaseUrl: string | undefined;
 
   beforeAll(async () => {
-    originalBaseUrl = process.env.HTTP_CLIENT_BASE_URL;
-    process.env.HTTP_CLIENT_BASE_URL = 'https://example.com';
-
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -21,10 +25,10 @@ describe('Health endpoint (e2e)', () => {
 
   afterAll(async () => {
     await app.close();
-    if (originalBaseUrl === undefined) {
-      delete process.env.HTTP_CLIENT_BASE_URL;
+    if (ORIGINAL_STATE_UPSTREAMS === undefined) {
+      delete process.env.HTTP_CLIENT_STATE_UPSTREAMS;
     } else {
-      process.env.HTTP_CLIENT_BASE_URL = originalBaseUrl;
+      process.env.HTTP_CLIENT_STATE_UPSTREAMS = ORIGINAL_STATE_UPSTREAMS;
     }
   });
 
