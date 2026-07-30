@@ -1,28 +1,23 @@
 import Joi from 'joi';
 
+import { parseStateUpstreams } from './state-upstreams';
+
 export const envValidationSchema = Joi.object({
   PORT: Joi.number().port().default(3000),
   LOG_LEVEL: Joi.string().valid('fatal', 'error', 'warn', 'info', 'debug', 'trace').default('info'),
-  // Base URL must be origin-only (no path) so proxy routes map 1:1; URI format enforced.
-  HTTP_CLIENT_BASE_URL: Joi.string()
-    .uri()
+  HTTP_CLIENT_STATE_UPSTREAMS: Joi.string()
     .required()
     .custom((value, helpers) => {
       try {
-        const parsed = new URL(value);
-        if (parsed.pathname && parsed.pathname !== '/') {
-          return helpers.error('any.custom');
-        }
+        parseStateUpstreams(value);
         return value;
       } catch {
         return helpers.error('any.custom');
       }
-    }, 'Base URL validation')
+    }, 'Federal-state upstream validation')
     .messages({
-      'any.custom': 'HTTP_CLIENT_BASE_URL must not include a path',
+      'any.custom': 'HTTP_CLIENT_STATE_UPSTREAMS must be a valid state-upstream map',
     }),
-  // Optional API key; empty string means "do not inject".
-  HTTP_CLIENT_API_KEY: Joi.string().allow('').default(''),
   // Timeout in ms; keep above 100ms to avoid spurious timeouts.
   HTTP_CLIENT_TIMEOUT: Joi.number().integer().min(100).default(10000),
   // Retries only apply to GET requests (see HttpClientService).
