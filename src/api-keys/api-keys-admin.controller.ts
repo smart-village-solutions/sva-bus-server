@@ -7,6 +7,7 @@ import {
   Logger,
   Param,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -26,6 +27,7 @@ type CreateApiKeyBody = {
 
 type RequestWithAdminIdentity = FastifyRequest & {
   adminIdentity?: string;
+  adminActorId?: string;
 };
 
 @Controller('internal/api-keys')
@@ -70,9 +72,13 @@ export class ApiKeysAdminController {
   }
 
   @Get()
-  async list(@Req() request: RequestWithAdminIdentity): Promise<unknown> {
+  async list(
+    @Req() request: RequestWithAdminIdentity,
+    @Query('label') label?: unknown,
+  ): Promise<unknown> {
+    const parsedLabel = this.parseLabelFilter(label);
     try {
-      const items = await this.apiKeysService.listApiKeys();
+      const items = await this.apiKeysService.listApiKeys(parsedLabel);
       this.audit(request, 'list', 'ok', { count: items.length });
 
       return {
@@ -98,11 +104,13 @@ export class ApiKeysAdminController {
   async revoke(
     @Req() request: RequestWithAdminIdentity,
     @Param('keyId') keyId: string,
+    @Query('label') label?: unknown,
   ): Promise<unknown> {
     const parsedKeyId = this.parseKeyId(keyId);
+    const parsedLabel = this.parseLabelFilter(label);
 
     try {
-      await this.apiKeysService.revokeApiKey(parsedKeyId);
+      await this.apiKeysService.revokeApiKey(parsedKeyId, parsedLabel);
       this.audit(request, 'revoke', 'ok', { keyId: parsedKeyId });
       return { ok: true };
     } catch (error) {
@@ -118,11 +126,13 @@ export class ApiKeysAdminController {
   async activate(
     @Req() request: RequestWithAdminIdentity,
     @Param('keyId') keyId: string,
+    @Query('label') label?: unknown,
   ): Promise<unknown> {
     const parsedKeyId = this.parseKeyId(keyId);
+    const parsedLabel = this.parseLabelFilter(label);
 
     try {
-      await this.apiKeysService.activateApiKey(parsedKeyId);
+      await this.apiKeysService.activateApiKey(parsedKeyId, parsedLabel);
       this.audit(request, 'activate', 'ok', { keyId: parsedKeyId });
       return { ok: true };
     } catch (error) {
@@ -152,6 +162,14 @@ export class ApiKeysAdminController {
       });
       throw error;
     }
+  }
+
+  private parseLabelFilter(value: unknown): string | undefined {
+    if (value === undefined) return undefined;
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new BadRequestException('label must be a non-empty string');
+    }
+    return value.trim();
   }
 
   private parseCreateBody(body: CreateApiKeyBody): CreateApiKeyInput {
@@ -229,6 +247,7 @@ export class ApiKeysAdminController {
       action,
       result,
       adminIdentity: request.adminIdentity ?? 'unknown',
+      ...(request.adminActorId ? { studioActorId: request.adminActorId } : {}),
       ip: request.ip ?? 'unknown',
       requestId: requestId ?? null,
       ...details,

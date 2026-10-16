@@ -94,7 +94,7 @@ export class ApiKeysService {
     return { apiKey, record };
   }
 
-  async listApiKeys(): Promise<ApiKeyRecord[]> {
+  async listApiKeys(label?: string): Promise<ApiKeyRecord[]> {
     const redis = this.getRedisClient();
     const keyIds = await redis.sMembers(this.indexKey());
     if (keyIds.length === 0) {
@@ -105,7 +105,7 @@ export class ApiKeysService {
     for (const keyId of keyIds) {
       const record = await this.getRecord(keyId, redis);
       if (record) {
-        records.push(record);
+        if (label === undefined || record.label === label) records.push(record);
         continue;
       }
       await redis.sRem(this.indexKey(), keyId);
@@ -114,9 +114,9 @@ export class ApiKeysService {
     return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
-  async revokeApiKey(keyId: string): Promise<void> {
+  async revokeApiKey(keyId: string, label?: string): Promise<void> {
     const redis = this.getRedisClient();
-    const record = await this.getRecordOrThrow(keyId, redis);
+    const record = await this.getRecordOrThrow(keyId, redis, label);
     if (record.revoked) {
       return;
     }
@@ -130,9 +130,9 @@ export class ApiKeysService {
     await redis.set(this.recordKey(keyId), JSON.stringify(updated));
   }
 
-  async activateApiKey(keyId: string): Promise<void> {
+  async activateApiKey(keyId: string, label?: string): Promise<void> {
     const redis = this.getRedisClient();
-    const record = await this.getRecordOrThrow(keyId, redis);
+    const record = await this.getRecordOrThrow(keyId, redis, label);
     const updated: ApiKeyRecord = {
       ...record,
       revoked: false,
@@ -207,9 +207,13 @@ export class ApiKeysService {
     return client;
   }
 
-  private async getRecordOrThrow(keyId: string, redis: RedisClient): Promise<ApiKeyRecord> {
+  private async getRecordOrThrow(
+    keyId: string,
+    redis: RedisClient,
+    label?: string,
+  ): Promise<ApiKeyRecord> {
     const record = await this.getRecord(keyId, redis);
-    if (!record) {
+    if (!record || (label !== undefined && record.label !== label)) {
       throw new NotFoundException('API key not found');
     }
     return record;

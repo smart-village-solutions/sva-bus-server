@@ -244,6 +244,7 @@ export class ProxyController {
       'x-forwarded-port',
       'x-real-ip',
       'x-api-key',
+      'x-admin-actor-id',
       'x-federal-state',
       'api_key',
     ]);

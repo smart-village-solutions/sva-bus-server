@@ -1,4 +1,5 @@
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 
@@ -159,6 +160,42 @@ describe('ApiKeysService', () => {
     await expect(service.validateClientApiKey(created.apiKey)).resolves.toBeNull();
     await expect(service.listApiKeys()).resolves.toEqual([]);
   });
+
+  it('filters labels exactly while retaining unlabeled records in the global list', async () => {
+    const matching = await service.createApiKey({
+      owner: 'Sankt Wendel',
+      label: 'sl-sankt-wendel',
+    });
+    await service.createApiKey({ owner: 'Other', label: 'sl-sankt-wendel-extra' });
+    await service.createApiKey({ owner: 'Legacy' });
+
+    await expect(service.listApiKeys('sl-sankt-wendel')).resolves.toEqual([matching.record]);
+    await expect(service.listApiKeys('SL-SANKT-WENDEL')).resolves.toEqual([]);
+    await expect(service.listApiKeys()).resolves.toHaveLength(3);
+  });
+
+  it.each(['revokeApiKey', 'activateApiKey'] as const)(
+    '%s rejects another label even for idempotent operations and leaves the record unchanged',
+    async (operation) => {
+      const created = await service.createApiKey({ owner: 'Prignitz', label: 'bb-prignitz' });
+      if (operation === 'activateApiKey') await service.revokeApiKey(created.record.keyId);
+      const before = redisKv.get(`${prefix}:key:${created.record.keyId}`);
+
+      await expect(
+        service[operation](created.record.keyId, 'sl-sankt-wendel'),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(redisKv.get(`${prefix}:key:${created.record.keyId}`)).toBe(before);
+      await expect(service[operation]('missing-key', 'bb-prignitz')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await service[operation](created.record.keyId, 'bb-prignitz');
+      await expect(service.validateClientApiKey(created.apiKey)).resolves.toEqual(
+        operation === 'activateApiKey'
+          ? expect.objectContaining({ keyId: created.record.keyId })
+          : null,
+      );
+    },
+  );
 
   it('applies per-key rate limits', async () => {
     const created = await service.createApiKey({ owner: 'limit-test' });
