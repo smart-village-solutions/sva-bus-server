@@ -123,6 +123,78 @@ Notes:
   matching state-specific Infodienste `api_key`.
 - `/api/v1/political-area/search` preserves repeated `searchWords` parameters as repeated upstream query parameters.
 
+### Client API Key Administration
+
+The internal admin API remains protected by `Authorization: Bearer <ADMIN_API_TOKEN>`.
+The planned SVA Studio integration belongs to the central instance administration and is
+restricted to platform superadmins (`instance_registry_admin`) on the root host, including
+server-side checks on every request. Tenant users, including tenant `system_admin`, must
+not receive this access. The Bus server authenticates the trusted Studio backend using the
+admin token; it does not authenticate Studio users itself. Never expose this token in a
+browser bundle or client-side environment variable.
+
+Key metadata uses `owner` for the full place name and `label` for the exact Studio instance ID.
+Multiple keys may share a label during rotation. Existing unlabeled keys remain supported.
+
+Create a key (the raw `apiKey` is returned only in this response):
+
+```bash
+curl -X POST "http://localhost:3000/internal/api-keys" \
+  -H "authorization: Bearer <ADMIN_API_TOKEN>" \
+  -H "x-admin-actor-id: <studio-session-user-id>" \
+  -H "x-request-id: <request-id>" \
+  -H "content-type: application/json" \
+  -d '{"owner":"Sankt Wendel","label":"sl-sankt-wendel","contact":"app@sankt-wendel.de","createdBy":"dk","expiresAt":"2027-01-01T00:00:00.000Z"}'
+```
+
+Studio will ask for the customer contact email and creator initials. Its date field will
+default to December 31 of the current year and allow another last valid day. The Studio
+backend converts that day to the start of the following day in UTC before calling this API;
+for example, December 31, 2026 becomes `2027-01-01T00:00:00.000Z`. The Bus API continues to
+accept an exact ISO-8601 timestamp, and existing optional metadata remains optional for
+manual callers. Reactivation does not extend `expiresAt`.
+
+List only keys of one instance:
+
+```bash
+curl "http://localhost:3000/internal/api-keys?label=sl-sankt-wendel" \
+  -H "authorization: Bearer <ADMIN_API_TOKEN>"
+```
+
+The optional query parameter is trimmed and matched case-sensitively against the entire
+stored label. An explicitly empty or repeated `label` returns HTTP 400. Omitting it retains
+the global metadata list. List responses never contain raw keys or their hashes.
+
+Scope lifecycle changes to that instance:
+
+```bash
+curl -X POST "http://localhost:3000/internal/api-keys/<keyId>/revoke?label=sl-sankt-wendel" \
+  -H "authorization: Bearer <ADMIN_API_TOKEN>"
+
+curl -X POST "http://localhost:3000/internal/api-keys/<keyId>/activate?label=sl-sankt-wendel" \
+  -H "authorization: Bearer <ADMIN_API_TOKEN>"
+```
+
+A missing key or mismatched label returns HTTP 404 without changing the record. The
+precondition is optional for backward compatibility; Studio must supply it for both
+operations. Labels associate records with instances for management and do not restrict
+the federal states a mobile client may select.
+
+`x-admin-actor-id` is an optional assertion by the authenticated technical caller, not a
+login credential. Studio must derive it from its server-side session, independently of
+the operator-entered `createdBy` initials. It accepts one non-empty identifier of at most
+256 characters, without control characters or commas. Invalid values return HTTP 400
+after authentication. Audit events record it as `studioActorId` alongside the hashed
+technical `adminIdentity` and request ID, without key material or contact emails. The
+proxy never forwards this actor header upstream. Admin responses use
+`Cache-Control: no-store`, including authentication and validation errors handled by the
+admin guard/controller.
+
+Do not automatically retry key creation after a timeout: the key may already exist while
+its one-time response was lost. Inspect the metadata, revoke an unusable key deliberately,
+and create a replacement. For rotation, create and distribute a new key before explicitly
+revoking the old one.
+
 ### Proxy Caching
 
 GET responses are cached in Redis using cache-aside with stale-while-revalidate. The proxy honors upstream

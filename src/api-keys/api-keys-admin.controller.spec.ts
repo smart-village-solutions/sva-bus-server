@@ -8,6 +8,7 @@ import { ApiKeysAdminController } from './api-keys-admin.controller';
 
 type RequestWithAdminIdentity = FastifyRequest & {
   adminIdentity?: string;
+  adminActorId?: string;
 };
 
 describe('ApiKeysAdminController', () => {
@@ -24,6 +25,7 @@ describe('ApiKeysAdminController', () => {
     ({
       ip: '203.0.113.5',
       adminIdentity: 'token:abcd1234',
+      adminActorId: 'root-user-1',
       headers: {
         'x-request-id': 'req-123',
       },
@@ -66,6 +68,8 @@ describe('ApiKeysAdminController', () => {
         keyId: 'key-1',
         hash: 'hash-1',
         owner: 'partner-a',
+        contact: 'customer@example.test',
+        createdBy: 'dk',
         createdAt: new Date('2026-01-01T00:00:00.000Z').toISOString(),
         revoked: false,
       },
@@ -76,7 +80,11 @@ describe('ApiKeysAdminController', () => {
       'log',
     );
 
-    await controller.create(buildRequest(), { owner: 'partner-a' });
+    await controller.create(buildRequest(), {
+      owner: 'partner-a',
+      contact: 'customer@example.test',
+      createdBy: 'dk',
+    });
 
     expect(logSpy).toHaveBeenCalledTimes(1);
     const logPayload = logSpy.mock.calls[0]?.[0];
@@ -89,9 +97,12 @@ describe('ApiKeysAdminController', () => {
     expect(parsed.keyId).toBe('key-1');
     expect(parsed.owner).toBe('partner-a');
     expect(parsed.adminIdentity).toBe('token:abcd1234');
+    expect(parsed.studioActorId).toBe('root-user-1');
     expect(parsed.requestId).toBe('req-123');
 
     expect(String(logPayload)).not.toContain(rawApiKey);
+    expect(String(logPayload)).not.toContain('hash-1');
+    expect(String(logPayload)).not.toContain('customer@example.test');
     expect(String(logPayload).toLowerCase()).not.toContain('authorization');
   });
 
@@ -116,5 +127,6 @@ describe('ApiKeysAdminController', () => {
     expect(parsed.result).toBe('error');
     expect(parsed.keyId).toBe('missing-key');
     expect(parsed.reason).toBe('NotFoundException');
+    expect(parsed.studioActorId).toBe('root-user-1');
   });
 });

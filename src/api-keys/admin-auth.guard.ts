@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 
 import {
+  BadRequestException,
   CanActivate,
   ExecutionContext,
   HttpException,
@@ -17,6 +18,7 @@ import { ApiKeysService } from './api-keys.service';
 
 type RequestWithAdminIdentity = FastifyRequest & {
   adminIdentity?: string;
+  adminActorId?: string;
 };
 
 @Injectable()
@@ -29,6 +31,7 @@ export class AdminAuthGuard implements CanActivate {
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<RequestWithAdminIdentity>();
     const reply = context.switchToHttp().getResponse<FastifyReply>();
+    reply.header('cache-control', 'no-store');
     const configuredToken = this.configService.get<string>('ADMIN_API_TOKEN') ?? '';
     if (configuredToken.length === 0) {
       throw new UnauthorizedException('Admin token is not configured');
@@ -56,6 +59,18 @@ export class AdminAuthGuard implements CanActivate {
     }
 
     request.adminIdentity = `token:${hashKeyForLogging(token)}`;
+    const actorId = request.headers['x-admin-actor-id'];
+    if (actorId !== undefined) {
+      if (
+        typeof actorId !== 'string' ||
+        actorId.trim().length === 0 ||
+        actorId.length > 256 ||
+        /[\p{Cc},]/u.test(actorId)
+      ) {
+        throw new BadRequestException('x-admin-actor-id must contain a single actor identifier');
+      }
+      request.adminActorId = actorId.trim();
+    }
     return true;
   }
 

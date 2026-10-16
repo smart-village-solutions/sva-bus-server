@@ -4,6 +4,7 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { Test, TestingModule } from '@nestjs/testing';
 
 import type { Cache } from 'cache-manager';
+import { ApiKeysService } from '../src/api-keys/api-keys.service';
 import { HttpClientService } from '../src/http-client/http-client.service';
 import { buildProxyCacheKey } from '../src/proxy/proxy-cache';
 import { sha256Hex } from '../src/utils/hash';
@@ -505,6 +506,116 @@ describe('Proxy endpoint (e2e)', () => {
     expect(httpClientService.requestRaw).not.toHaveBeenCalled();
   });
 
+  it('lists only exact instance labels without revealing key material', async () => {
+    const service = app.get(ApiKeysService);
+    const matching = await service.createApiKey({
+      owner: 'Sankt Wendel',
+      label: 'sl-sankt-wendel',
+    });
+    await service.createApiKey({ owner: 'Other', label: 'sl-sankt-wendel-extra' });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/internal/api-keys?label=sl-sankt-wendel',
+      headers: { authorization: `Bearer ${TEST_ADMIN_TOKEN}`, 'x-admin-actor-id': 'studio-user' },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['cache-control']).toBe('no-store');
+    expect(response.json().items).toEqual([
+      expect.objectContaining({ keyId: matching.record.keyId, label: 'sl-sankt-wendel' }),
+    ]);
+    expect(response.body).not.toContain(matching.apiKey);
+    expect(response.body).not.toContain(matching.record.hash);
+
+    const legacy = await app.inject({
+      method: 'GET',
+      url: '/internal/api-keys',
+      headers: { authorization: `Bearer ${TEST_ADMIN_TOKEN}` },
+    });
+    expect(legacy.statusCode).toBe(200);
+    expect(legacy.json().items).toHaveLength(3);
+  });
+
+  it.each(['', '%20%20', 'one&label=two'])(
+    'rejects invalid label query %s instead of returning the global list',
+    async (label) => {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/internal/api-keys?label=${label}`,
+        headers: { authorization: `Bearer ${TEST_ADMIN_TOKEN}` },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.json()).not.toHaveProperty('items');
+    },
+  );
+
+  it.each(['revoke', 'activate'] as const)(
+    'enforces the label precondition before %s and changes proxy access only on success',
+    async (operation) => {
+      const service = app.get(ApiKeysService);
+      const created = await service.createApiKey({ owner: 'Prignitz', label: 'bb-prignitz' });
+      if (operation === 'activate') await service.revokeApiKey(created.record.keyId);
+      const before = redisStore.get(`${TEST_KEYS_PREFIX}:key:${created.record.keyId}`);
+      const headers = { authorization: `Bearer ${TEST_ADMIN_TOKEN}` };
+      const wrongInstance = await app.inject({
+        method: 'POST',
+        url: `/internal/api-keys/${created.record.keyId}/${operation}?label=sl-sankt-wendel`,
+        headers,
+      });
+      expect(wrongInstance.statusCode).toBe(404);
+      expect(wrongInstance.headers['cache-control']).toBe('no-store');
+      expect(redisStore.get(`${TEST_KEYS_PREFIX}:key:${created.record.keyId}`)).toBe(before);
+
+      const emptyLabel = await app.inject({
+        method: 'POST',
+        url: `/internal/api-keys/${created.record.keyId}/${operation}?label=`,
+        headers,
+      });
+      expect(emptyLabel.statusCode).toBe(400);
+      expect(redisStore.get(`${TEST_KEYS_PREFIX}:key:${created.record.keyId}`)).toBe(before);
+
+      const success = await app.inject({
+        method: 'POST',
+        url: `/internal/api-keys/${created.record.keyId}/${operation}?label=bb-prignitz`,
+        headers,
+      });
+      expect(success.statusCode).toBe(201);
+      httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
+      const proxy = await app.inject({
+        method: 'GET',
+        url: '/api/v1/studio-key-test',
+        headers: { 'x-api-key': created.apiKey, 'x-federal-state': 'BB' },
+      });
+      expect(proxy.statusCode).toBe(operation === 'activate' ? 200 : 401);
+    },
+  );
+
+  it('does not authorize an actor header without the admin token', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/internal/api-keys',
+      headers: { 'x-admin-actor-id': 'studio-superadmin' },
+      payload: { owner: 'Unauthorized' },
+    });
+    expect(response.statusCode).toBe(401);
+    expect(response.headers['cache-control']).toBe('no-store');
+    await expect(app.get(ApiKeysService).listApiKeys()).resolves.toHaveLength(1);
+  });
+
+  it('strips the admin actor assertion from proxy requests', async () => {
+    httpClientService.requestRaw.mockResolvedValueOnce(buildUpstreamResponse());
+    const response = await injectProxy({
+      method: 'GET',
+      url: '/api/v1/admin-actor-header',
+      headers: { 'x-admin-actor-id': 'private-studio-user', 'x-request-id': 'trace-1' },
+    });
+    expect(response.statusCode).toBe(200);
+    const options = httpClientService.requestRaw.mock.calls[0]?.[3];
+    expect(options.headers).not.toHaveProperty('x-admin-actor-id');
+    expect(options.headers['x-request-id']).toBe('trace-1');
+  });
+
   it('creates and revokes api keys via admin endpoints', async () => {
     const createResponse = await app.inject({
       method: 'POST',
@@ -519,6 +630,7 @@ describe('Proxy endpoint (e2e)', () => {
     });
 
     expect(createResponse.statusCode).toBe(201);
+    expect(createResponse.headers['cache-control']).toBe('no-store');
     const created = createResponse.json() as { apiKey: string; keyId: string };
     expect(created.apiKey).toMatch(/^sk_/);
     expect(created.keyId).toBeTruthy();

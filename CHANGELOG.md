@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+## 0.7.3
+
+### Added
+
+- Optional exact `label` filtering for API key metadata and label preconditions for revocation
+  and reactivation, preparing instance-specific administration in SVA Studio.
+- Optional validated `x-admin-actor-id` for audit correlation with a Studio user, separate from
+  the technical admin identity and creator initials. Existing admin calls remain compatible.
+- Cross-application implementation plan for API key management exclusively by platform
+  superadmins in the central Studio instance administration. The Studio UI is not part of this release.
+
+### Security
+
+- Admin responses now use `Cache-Control: no-store`, and the proxy strips `x-admin-actor-id`
+  before forwarding requests upstream.
+
 ### Fixed
 
 - Proxy responses no longer forward stale compression metadata after Undici decoded the upstream
